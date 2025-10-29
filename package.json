@@ -1,0 +1,23 @@
+{
+  "name": "screeps-arena-simulator",
+  "version": "1.0.0",
+  "description": "Combat simulator for Screeps Arena with ELO ratings",
+  "type": "module",
+  "main": "runner.mjs",
+  "scripts": {
+    "test": "node runner.mjs --mode quick",
+    "test:random": "node runner.mjs --mode random --battles 500",
+    "test:elo": "node runner.mjs --mode elo --compositions 20 --battles 100",
+    "test:ranged": "node runner.mjs --mode predefined --scenario ranged_kite --battles 100",
+    "test:current": "node runner.mjs --mode predefined --scenario current_strategy --battles 100"
+  },
+  "keywords": [
+    "screeps",
+    "arena",
+    "simulation",
+    "elo",
+    "combat"
+  ],
+  "author": "adel-0",
+  "license": "MIT"
+}
