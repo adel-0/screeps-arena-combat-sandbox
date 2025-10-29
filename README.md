@@ -2,10 +2,11 @@
 
 Offline combat simulator for Screeps Arena. Test squad compositions, run tournaments, and figure out what actually works before you deploy.
 
+![Combat Simulator](screeps-combat-simulator.gif)
+
 ## Getting Started
 
 ```bash
-cd simulation
 npm install
 npm test
 ```
@@ -13,14 +14,11 @@ npm test
 This runs a quick test of predefined scenarios. Want to try something else?
 
 ```bash
-# Generate random squads and fight them
-npm run test:random
+npm run test:random    # Generate random squads and fight them
 
-# Run a full ELO tournament
-npm run test:elo
+npm run test:elo       # Run a full ELO tournament
 
-# Test your ranged kiting strategy
-npm run test:ranged
+npm run test:ranged    # Test your ranged kiting strategy
 ```
 
 ## How it works
