@@ -15,15 +15,24 @@ const DEFAULT_SPAWN_JITTER = {
 };
 
 const DEFAULT_RANDOM_WALLS = {
-    count: 6,
-    margin: 8,
-    minDistance: 3,
-    attempts: 30
+    clusterCount: 6,
+    wallsPerCluster: 8,
+    margin: 12,
+    minClusterDistance: 10,
+    clusterRadius: 3,
+    attempts: 40
+};
+
+const DEFAULT_RANDOM_TERRAIN = {
+    swampProbability: 0.05,
+    clusterSize: 2,
+    clusterProbability: 0.7
 };
 
 const DEFAULT_ENTROPY = {
     spawnJitter: DEFAULT_SPAWN_JITTER,
-    randomWalls: DEFAULT_RANDOM_WALLS
+    randomWalls: DEFAULT_RANDOM_WALLS,
+    randomTerrain: DEFAULT_RANDOM_TERRAIN
 };
 
 function copySpawnJitterConfig(cfg) {
@@ -39,10 +48,20 @@ function copySpawnJitterConfig(cfg) {
 
 function copyRandomWallsConfig(cfg) {
     return {
-        count: cfg.count,
+        clusterCount: cfg.clusterCount,
+        wallsPerCluster: cfg.wallsPerCluster,
         margin: cfg.margin,
-        minDistance: cfg.minDistance,
+        minClusterDistance: cfg.minClusterDistance,
+        clusterRadius: cfg.clusterRadius,
         attempts: cfg.attempts
+    };
+}
+
+function copyRandomTerrainConfig(cfg) {
+    return {
+        swampProbability: cfg.swampProbability,
+        clusterSize: cfg.clusterSize,
+        clusterProbability: cfg.clusterProbability
     };
 }
 
@@ -110,9 +129,11 @@ function normalizeRandomWalls(value) {
             return null;
         }
         return {
-            count: value,
+            clusterCount: Math.ceil(value / 8),
+            wallsPerCluster: 8,
             margin: DEFAULT_RANDOM_WALLS.margin,
-            minDistance: DEFAULT_RANDOM_WALLS.minDistance,
+            minClusterDistance: DEFAULT_RANDOM_WALLS.minClusterDistance,
+            clusterRadius: DEFAULT_RANDOM_WALLS.clusterRadius,
             attempts: DEFAULT_RANDOM_WALLS.attempts
         };
     }
@@ -121,16 +142,52 @@ function normalizeRandomWalls(value) {
         return null;
     }
 
-    const count = value.count ?? DEFAULT_RANDOM_WALLS.count;
-    if (count <= 0) {
+    // Support legacy 'count' parameter
+    if (value.count !== undefined && value.clusterCount === undefined) {
+        const totalWalls = value.count;
+        value = {
+            ...value,
+            clusterCount: Math.ceil(totalWalls / 8),
+            wallsPerCluster: 8
+        };
+    }
+
+    const clusterCount = value.clusterCount ?? DEFAULT_RANDOM_WALLS.clusterCount;
+    if (clusterCount <= 0) {
         return null;
     }
 
     return {
-        count,
+        clusterCount,
+        wallsPerCluster: value.wallsPerCluster ?? DEFAULT_RANDOM_WALLS.wallsPerCluster,
         margin: value.margin ?? DEFAULT_RANDOM_WALLS.margin,
-        minDistance: value.minDistance ?? DEFAULT_RANDOM_WALLS.minDistance,
+        minClusterDistance: value.minClusterDistance ?? DEFAULT_RANDOM_WALLS.minClusterDistance,
+        clusterRadius: value.clusterRadius ?? DEFAULT_RANDOM_WALLS.clusterRadius,
         attempts: value.attempts ?? DEFAULT_RANDOM_WALLS.attempts
+    };
+}
+
+function normalizeRandomTerrain(value) {
+    if (value === false || value === null) {
+        return null;
+    }
+
+    if (value === undefined) {
+        return copyRandomTerrainConfig(DEFAULT_RANDOM_TERRAIN);
+    }
+
+    if (value === true) {
+        return copyRandomTerrainConfig(DEFAULT_RANDOM_TERRAIN);
+    }
+
+    if (typeof value !== 'object') {
+        return null;
+    }
+
+    return {
+        swampProbability: value.swampProbability ?? DEFAULT_RANDOM_TERRAIN.swampProbability,
+        clusterSize: value.clusterSize ?? DEFAULT_RANDOM_TERRAIN.clusterSize,
+        clusterProbability: value.clusterProbability ?? DEFAULT_RANDOM_TERRAIN.clusterProbability
     };
 }
 
@@ -142,7 +199,8 @@ function normalizeEntropyConfig(entropy) {
     if (entropy === undefined || entropy === null) {
         return {
             spawnJitter: copySpawnJitterConfig(DEFAULT_SPAWN_JITTER),
-            randomWalls: copyRandomWallsConfig(DEFAULT_RANDOM_WALLS)
+            randomWalls: copyRandomWallsConfig(DEFAULT_RANDOM_WALLS),
+            randomTerrain: copyRandomTerrainConfig(DEFAULT_RANDOM_TERRAIN)
         };
     }
 
@@ -152,7 +210,7 @@ function normalizeEntropyConfig(entropy) {
 
     if (typeof entropy !== 'object') {
         const spawnJitter = normalizeSpawnJitter(entropy);
-        return spawnJitter ? { spawnJitter, randomWalls: null } : null;
+        return spawnJitter ? { spawnJitter, randomWalls: null, randomTerrain: null } : null;
     }
 
     const hasSpawnSetting = Object.prototype.hasOwnProperty.call(entropy, 'spawnJitter') ||
@@ -162,7 +220,10 @@ function normalizeEntropyConfig(entropy) {
     const hasWallSetting = Object.prototype.hasOwnProperty.call(entropy, 'randomWalls') ||
         Object.prototype.hasOwnProperty.call(entropy, 'walls');
 
-    const useDefaults = !hasSpawnSetting && !hasWallSetting && Object.keys(entropy).length === 0;
+    const hasTerrainSetting = Object.prototype.hasOwnProperty.call(entropy, 'randomTerrain') ||
+        Object.prototype.hasOwnProperty.call(entropy, 'terrain');
+
+    const useDefaults = !hasSpawnSetting && !hasWallSetting && !hasTerrainSetting && Object.keys(entropy).length === 0;
 
     const spawnSource = hasSpawnSetting
         ? (entropy.spawnJitter ?? entropy.spawnOffset ?? entropy.spawn)
@@ -172,8 +233,13 @@ function normalizeEntropyConfig(entropy) {
         ? (entropy.randomWalls ?? entropy.walls)
         : (useDefaults ? DEFAULT_RANDOM_WALLS : undefined);
 
+    const terrainSource = hasTerrainSetting
+        ? (entropy.randomTerrain ?? entropy.terrain)
+        : (useDefaults ? DEFAULT_RANDOM_TERRAIN : undefined);
+
     const spawnJitter = normalizeSpawnJitter(spawnSource);
     const randomWalls = normalizeRandomWalls(wallSource);
+    const randomTerrain = normalizeRandomTerrain(terrainSource);
 
     const result = {};
     if (spawnJitter) {
@@ -181,6 +247,9 @@ function normalizeEntropyConfig(entropy) {
     }
     if (randomWalls) {
         result.randomWalls = randomWalls;
+    }
+    if (randomTerrain) {
+        result.randomTerrain = randomTerrain;
     }
 
     return Object.keys(result).length > 0 ? result : null;
@@ -208,7 +277,7 @@ export class CombatEngine {
     constructor(config = {}) {
         this.maxTicks = config.maxTicks || 1000;
         this.randomSource = typeof config.random === 'function' ? config.random : Math.random;
-        const baseTerrain = config.terrain ? cloneTerrainInstance(config.terrain) : new Terrain(100, 100, 'swamp');
+        const baseTerrain = config.terrain ? cloneTerrainInstance(config.terrain) : new Terrain(50, 50, 'plain');
         this.baseTerrain = baseTerrain;
         this.terrain = cloneTerrainInstance(this.baseTerrain);
         this.verbose = config.verbose || false;
@@ -233,6 +302,10 @@ export class CombatEngine {
         };
 
         this.terrain = cloneTerrainInstance(this.baseTerrain);
+
+        if (this.entropy && this.entropy.randomTerrain) {
+            this.generateRandomTerrain(battleContext);
+        }
 
         if (this.entropy && this.entropy.randomWalls) {
             this.applyTerrainEntropy(battleContext);
@@ -590,21 +663,23 @@ export class CombatEngine {
             this.recording.terrain = this.terrain.toGrid();
         }
 
-        // Record creep states
-        const creepStates = this.creeps.map(creep => ({
-            id: creep.id,
-            name: creep.name,
-            x: creep.x,
-            y: creep.y,
-            my: creep.my,
-            hits: creep.hits,
-            hitsMax: creep.hitsMax,
-            damageDealt: creep.damageDealt,
-            damageTaken: creep.damageTaken,
-            healingDone: creep.healingDone,
-            healingReceived: creep.healingReceived,
-            fatigue: creep.fatigue
-        }));
+        // Record only alive creep states (dead creeps disappear in Screeps Arena)
+        const creepStates = this.creeps
+            .filter(creep => creep.isAlive())
+            .map(creep => ({
+                id: creep.id,
+                name: creep.name,
+                x: creep.x,
+                y: creep.y,
+                my: creep.my,
+                hits: creep.hits,
+                hitsMax: creep.hitsMax,
+                damageDealt: creep.damageDealt,
+                damageTaken: creep.damageTaken,
+                healingDone: creep.healingDone,
+                healingReceived: creep.healingReceived,
+                fatigue: creep.fatigue
+            }));
 
         this.recording.frames.push({
             tick: this.tick,
@@ -674,14 +749,71 @@ export class CombatEngine {
         };
     }
 
+    generateRandomTerrain(battleContext) {
+        const config = this.entropy?.randomTerrain;
+        if (!config) {
+            return;
+        }
+
+        const { swampProbability, clusterSize, clusterProbability } = config;
+        const swampTiles = [];
+        const isSwamp = new Set();
+
+        for (let y = 0; y < this.terrain.height; y++) {
+            for (let x = 0; x < this.terrain.width; x++) {
+                const key = `${x},${y}`;
+                if (isSwamp.has(key)) {
+                    continue;
+                }
+
+                if (this.randomSource() < swampProbability) {
+                    this.terrain.setTerrain(x, y, 'swamp');
+                    swampTiles.push({ x, y });
+                    isSwamp.add(key);
+
+                    if (this.randomSource() < clusterProbability) {
+                        for (let dy = -clusterSize; dy <= clusterSize; dy++) {
+                            for (let dx = -clusterSize; dx <= clusterSize; dx++) {
+                                if (dx === 0 && dy === 0) continue;
+                                const distance = Math.abs(dx) + Math.abs(dy);
+                                if (distance > clusterSize) continue;
+
+                                const nx = x + dx;
+                                const ny = y + dy;
+                                const nkey = `${nx},${ny}`;
+
+                                if (nx >= 0 && nx < this.terrain.width &&
+                                    ny >= 0 && ny < this.terrain.height &&
+                                    !isSwamp.has(nkey)) {
+                                    const probability = 1 - (distance / (clusterSize + 1));
+                                    if (this.randomSource() < probability) {
+                                        this.terrain.setTerrain(nx, ny, 'swamp');
+                                        swampTiles.push({ x: nx, y: ny });
+                                        isSwamp.add(nkey);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (battleContext) {
+            battleContext.terrainMutations = battleContext.terrainMutations || {};
+            battleContext.terrainMutations.swamps = swampTiles;
+        }
+    }
+
     applyTerrainEntropy(battleContext) {
         const config = this.entropy?.randomWalls;
         if (!config) {
             return;
         }
 
-        const { count, margin, minDistance, attempts } = config;
+        const { clusterCount, wallsPerCluster, margin, minClusterDistance, clusterRadius, attempts } = config;
         const placedWalls = [];
+        const clusterCenters = [];
 
         const minX = Math.max(0, margin);
         const maxX = Math.min(this.terrain.width - 1, this.terrain.width - margin - 1);
@@ -692,20 +824,20 @@ export class CombatEngine {
             return;
         }
 
-        for (let i = 0; i < count; i++) {
-            let placed = false;
+        // Place wall clusters
+        for (let clusterIdx = 0; clusterIdx < clusterCount; clusterIdx++) {
+            let clusterPlaced = false;
 
+            // Try to find a good location for cluster center
             for (let attempt = 0; attempt < attempts; attempt++) {
-                const x = this.randomInt(minX, maxX);
-                const y = this.randomInt(minY, maxY);
+                const centerX = this.randomInt(minX, maxX);
+                const centerY = this.randomInt(minY, maxY);
 
-                if (!this.terrain.isWalkable(x, y)) {
-                    continue;
-                }
-
+                // Check if too close to other cluster centers
                 let tooClose = false;
-                for (const wall of placedWalls) {
-                    if (Math.abs(wall.x - x) + Math.abs(wall.y - y) <= minDistance) {
+                for (const center of clusterCenters) {
+                    const dist = Math.abs(center.x - centerX) + Math.abs(center.y - centerY);
+                    if (dist <= minClusterDistance) {
                         tooClose = true;
                         break;
                     }
@@ -715,13 +847,69 @@ export class CombatEngine {
                     continue;
                 }
 
-                this.terrain.setTerrain(x, y, 'wall');
-                placedWalls.push({ x, y });
-                placed = true;
-                break;
+                // Place walls in this cluster
+                const clusterWalls = [];
+                const wallAttempts = attempts * 2;
+
+                for (let wallIdx = 0; wallIdx < wallsPerCluster; wallIdx++) {
+                    let wallPlaced = false;
+
+                    for (let wallAttempt = 0; wallAttempt < wallAttempts; wallAttempt++) {
+                        // Generate position within cluster radius
+                        const offsetX = this.randomInt(-clusterRadius, clusterRadius);
+                        const offsetY = this.randomInt(-clusterRadius, clusterRadius);
+                        const wallX = centerX + offsetX;
+                        const wallY = centerY + offsetY;
+
+                        // Check bounds
+                        if (wallX < 0 || wallX >= this.terrain.width ||
+                            wallY < 0 || wallY >= this.terrain.height) {
+                            continue;
+                        }
+
+                        // Check if already a wall or not walkable
+                        if (!this.terrain.isWalkable(wallX, wallY)) {
+                            continue;
+                        }
+
+                        // Check if too close to walls from this cluster (avoid immediate adjacency)
+                        let tooCloseToClusterWall = false;
+                        for (const wall of clusterWalls) {
+                            const dist = Math.abs(wall.x - wallX) + Math.abs(wall.y - wallY);
+                            if (dist === 0) {
+                                tooCloseToClusterWall = true;
+                                break;
+                            }
+                        }
+
+                        if (tooCloseToClusterWall) {
+                            continue;
+                        }
+
+                        // Place wall
+                        this.terrain.setTerrain(wallX, wallY, 'wall');
+                        clusterWalls.push({ x: wallX, y: wallY });
+                        wallPlaced = true;
+                        break;
+                    }
+
+                    // If we couldn't place this wall, continue with fewer walls in cluster
+                    if (!wallPlaced) {
+                        break;
+                    }
+                }
+
+                // If we placed at least some walls, consider this cluster successful
+                if (clusterWalls.length > 0) {
+                    clusterCenters.push({ x: centerX, y: centerY });
+                    placedWalls.push(...clusterWalls);
+                    clusterPlaced = true;
+                    break;
+                }
             }
 
-            if (!placed) {
+            // If we couldn't place this cluster, stop trying to place more
+            if (!clusterPlaced) {
                 break;
             }
         }

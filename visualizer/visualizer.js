@@ -64,6 +64,12 @@ class BattleVisualizer {
         this.heatmapLabel = overlay ? (label || 'Heatmap') : '';
         this.updateHeatmapStatus();
 
+        // Update gridSize when showing heatmap without battle data
+        if (overlay && !this.battleData) {
+            this.gridSize = overlay.width || overlay.height || 100;
+            this.cellSize = Math.max(1, Math.floor(this.canvas.width / this.gridSize));
+        }
+
         if (!this.battleData && !this.heatmapOverlay) {
             this.clearCanvas();
             this.updateOverlayUI();
@@ -79,19 +85,20 @@ class BattleVisualizer {
     }
 
     setupEventListeners() {
-        // File upload
-        document.getElementById('battleFile').addEventListener('change', (e) => {
-            this.loadBattleFile(e.target.files[0]);
-        });
-
         // Playback controls
         document.getElementById('playBtn').addEventListener('click', () => this.play());
         document.getElementById('pauseBtn').addEventListener('click', () => this.pause());
         document.getElementById('resetBtn').addEventListener('click', () => this.reset());
 
         // Speed control
-        document.getElementById('speedSlider').addEventListener('input', (e) => {
-            const speeds = [0.25, 0.5, 1, 2, 3, 5, 7, 10, 15, 20];
+        const speedSlider = document.getElementById('speedSlider');
+        const speeds = [0.25, 0.5, 1, 2, 3, 5, 7, 10, 15, 20];
+
+        // Set initial speed from slider value
+        this.playbackSpeed = speeds[speedSlider.value - 1];
+        document.getElementById('speedValue').textContent = this.playbackSpeed.toFixed(2);
+
+        speedSlider.addEventListener('input', (e) => {
             this.playbackSpeed = speeds[e.target.value - 1];
             document.getElementById('speedValue').textContent = this.playbackSpeed.toFixed(2);
         });
@@ -228,6 +235,12 @@ class BattleVisualizer {
         document.getElementById('playBtn').disabled = false;
         document.getElementById('pauseBtn').disabled = false;
         document.getElementById('resetBtn').disabled = false;
+    }
+
+    disableControls() {
+        document.getElementById('playBtn').disabled = true;
+        document.getElementById('pauseBtn').disabled = true;
+        document.getElementById('resetBtn').disabled = true;
     }
 
     play() {
@@ -406,7 +419,9 @@ class BattleVisualizer {
             for (let x = 0; x < this.gridSize; x++) {
                 const terrainType = this.battleData.terrain[y]?.[x] || 0;
 
-                if (terrainType === 2) { // Swamp
+                if (terrainType === 1) { // Wall
+                    this.ctx.fillStyle = '#555555';
+                } else if (terrainType === 2) { // Swamp
                     this.ctx.fillStyle = '#3a4a3f';
                 } else { // Plain
                     this.ctx.fillStyle = '#33333a';
@@ -423,67 +438,47 @@ class BattleVisualizer {
     }
 
     drawCreeps(creeps) {
+        // Dead creeps are not included in the recording (they disappear in Screeps Arena)
         for (const creep of creeps) {
             const x = creep.x * this.cellSize;
             const y = creep.y * this.cellSize;
-            const isDead = creep.hits <= 0;
 
-            if (isDead) {
-                // Dead creep - dark gray with X marker
-                this.ctx.fillStyle = '#2a2a2e';
-                this.ctx.fillRect(x + 2, y + 2, this.cellSize - 4, this.cellSize - 4);
+            // Creep body
+            this.ctx.fillStyle = creep.my ? '#67c2a1' : '#e27c79';
+            this.ctx.fillRect(x + 2, y + 2, this.cellSize - 4, this.cellSize - 4);
 
-                // Dark border
-                this.ctx.strokeStyle = '#1e1e22';
-                this.ctx.lineWidth = 1.5;
-                this.ctx.strokeRect(x + 2, y + 2, this.cellSize - 4, this.cellSize - 4);
+            // Border
+            this.ctx.strokeStyle = creep.my ? '#4f9f81' : '#c45f5c';
+            this.ctx.lineWidth = 1.5;
+            this.ctx.strokeRect(x + 2, y + 2, this.cellSize - 4, this.cellSize - 4);
 
-                // Draw X symbol if cell is large enough
-                if (this.cellSize >= 16) {
-                    this.ctx.fillStyle = '#555';
-                    this.ctx.font = 'bold 14px sans-serif';
-                    this.ctx.textAlign = 'center';
-                    this.ctx.textBaseline = 'middle';
-                    this.ctx.fillText('✕', x + this.cellSize / 2, y + this.cellSize / 2);
-                }
+            // Health bar
+            const healthPercent = creep.hits / creep.hitsMax;
+            const barWidth = this.cellSize - 4;
+            const barHeight = 3;
+
+            // Background
+            this.ctx.fillStyle = '#1e1e22';
+            this.ctx.fillRect(x + 2, y + this.cellSize - barHeight - 2, barWidth, barHeight);
+
+            // Health
+            if (healthPercent > 0.6) {
+                this.ctx.fillStyle = '#67c2a1';
+            } else if (healthPercent > 0.3) {
+                this.ctx.fillStyle = '#e8c770';
             } else {
-                // Alive creep - normal colors
-                this.ctx.fillStyle = creep.my ? '#67c2a1' : '#e27c79';
-                this.ctx.fillRect(x + 2, y + 2, this.cellSize - 4, this.cellSize - 4);
+                this.ctx.fillStyle = '#e27c79';
+            }
+            this.ctx.fillRect(x + 2, y + this.cellSize - barHeight - 2, barWidth * healthPercent, barHeight);
 
-                // Border
-                this.ctx.strokeStyle = creep.my ? '#4f9f81' : '#c45f5c';
-                this.ctx.lineWidth = 1.5;
-                this.ctx.strokeRect(x + 2, y + 2, this.cellSize - 4, this.cellSize - 4);
-
-                // Health bar
-                const healthPercent = creep.hits / creep.hitsMax;
-                const barWidth = this.cellSize - 4;
-                const barHeight = 3;
-
-                // Background
+            // Creep name
+            if (this.cellSize >= 16) {
                 this.ctx.fillStyle = '#1e1e22';
-                this.ctx.fillRect(x + 2, y + this.cellSize - barHeight - 2, barWidth, barHeight);
-
-                // Health
-                if (healthPercent > 0.6) {
-                    this.ctx.fillStyle = '#67c2a1';
-                } else if (healthPercent > 0.3) {
-                    this.ctx.fillStyle = '#e8c770';
-                } else {
-                    this.ctx.fillStyle = '#e27c79';
-                }
-                this.ctx.fillRect(x + 2, y + this.cellSize - barHeight - 2, barWidth * healthPercent, barHeight);
-
-                // Creep name
-                if (this.cellSize >= 16) {
-                    this.ctx.fillStyle = '#1e1e22';
-                    this.ctx.font = 'bold 8px sans-serif';
-                    this.ctx.textAlign = 'center';
-                    this.ctx.textBaseline = 'middle';
-                    const displayName = creep.name.length > 8 ? creep.name.slice(0, 8) : creep.name;
-                    this.ctx.fillText(displayName, x + this.cellSize / 2, y + this.cellSize / 2);
-                }
+                this.ctx.font = 'bold 8px sans-serif';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                const displayName = creep.name.length > 8 ? creep.name.slice(0, 8) : creep.name;
+                this.ctx.fillText(displayName, x + this.cellSize / 2, y + this.cellSize / 2);
             }
         }
     }
@@ -598,9 +593,7 @@ function setupSimulationUI(visualizer) {
     const scenarioSelect = document.getElementById('simScenario');
     const entropyCheckbox = document.getElementById('simEntropy');
     const recordCheckbox = document.getElementById('simRecord');
-    const heatmapCheckbox = document.getElementById('simHeatmap');
     const statusText = document.getElementById('simStatus');
-    const resultsSummary = document.getElementById('resultsSummary');
     const heatmapStatus = document.getElementById('heatmapStatus');
     const scenarioRow = document.getElementById('scenarioRow');
     const compositionsRow = document.getElementById('compositionsRow');
@@ -627,15 +620,6 @@ function setupSimulationUI(visualizer) {
         if (compositionsRow) {
             compositionsRow.style.display = mode === 'elo' ? 'flex' : 'none';
         }
-
-        if (heatmapCheckbox) {
-            if (mode === 'elo') {
-                heatmapCheckbox.checked = false;
-                heatmapCheckbox.disabled = true;
-            } else {
-                heatmapCheckbox.disabled = false;
-            }
-        }
     };
 
     if (modeSelect) {
@@ -655,9 +639,8 @@ function setupSimulationUI(visualizer) {
     };
 
     const renderResults = (result) => {
-        if (!resultsSummary) {
-            return;
-        }
+        // Simplified: we only show recordings now, not simulation results
+        return;
 
         const fragments = [];
         let availableRuns = [];
@@ -716,8 +699,6 @@ function setupSimulationUI(visualizer) {
         }
 
         const nodes = resultsSummary.querySelectorAll('.results-run');
-        let initialSelection = null;
-        let initialHeatmap = null;
 
         availableRuns.forEach((run, index) => {
             const node = nodes[index];
@@ -728,44 +709,26 @@ function setupSimulationUI(visualizer) {
             node.classList.add('interactive');
             node.classList.toggle('has-heatmap', Boolean(run.heatmap));
 
-            if (!initialSelection) {
-                initialSelection = { run, index };
-            }
-
-            if (!initialHeatmap && run.heatmap) {
-                initialHeatmap = { run, index };
-            }
-
             node.addEventListener('click', () => {
                 highlightSelection(index);
 
                 if (run.heatmap) {
+                    // Clear battle data when showing heatmap
+                    visualizer.battleData = null;
+                    visualizer.disableControls();
                     visualizer.setHeatmapOverlay(run.heatmap, run.label);
                 } else {
                     visualizer.setHeatmapOverlay(null);
                 }
 
                 if (run.recording) {
+                    visualizer.setHeatmapOverlay(null);
                     visualizer.loadBattleData(run.recording);
                 }
             });
         });
 
-        const chosen = initialHeatmap || initialSelection;
-
-        if (chosen) {
-            highlightSelection(chosen.index);
-
-            if (chosen.run.heatmap) {
-                visualizer.setHeatmapOverlay(chosen.run.heatmap, chosen.run.label);
-            } else {
-                visualizer.setHeatmapOverlay(null);
-            }
-
-            if (chosen.run.recording) {
-                visualizer.loadBattleData(chosen.run.recording);
-            }
-        }
+        // Don't auto-select any result - user must click to view
     };
 
     form.addEventListener('submit', async (event) => {
@@ -785,7 +748,7 @@ function setupSimulationUI(visualizer) {
             scenario: modeSelect.value === 'predefined' ? scenarioSelect.value : undefined,
             entropy: entropyCheckbox.checked,
             record: recordCheckbox.checked,
-            heatmap: heatmapCheckbox.checked
+            heatmap: false  // Heatmaps are now generated from recordings
         };
 
         if (payload.mode !== 'elo') {
@@ -812,11 +775,17 @@ function setupSimulationUI(visualizer) {
             const result = json.result;
             renderResults(result);
 
-            if (recordCheckbox.checked && result.recording) {
-                visualizer.loadBattleData(result.recording);
+            // If recording was saved, refresh the recordings list
+            if (recordCheckbox.checked && json.savedRecording) {
+                setStatus(`Simulation complete. Recording saved as: ${json.savedRecording}`);
+                // Refresh recordings list after a short delay to ensure file is written
+                setTimeout(() => {
+                    const refreshBtn = document.getElementById('refreshRecordingsBtn');
+                    if (refreshBtn) refreshBtn.click();
+                }, 100);
+            } else {
+                setStatus('Simulation complete.');
             }
-
-            setStatus('Simulation complete.');
         } catch (error) {
             console.error('Simulation request failed:', error);
             setStatus(`Error: ${error.message}`, true);
@@ -828,9 +797,209 @@ function setupSimulationUI(visualizer) {
     });
 }
 
+// Recordings management
+async function loadRecordingsList() {
+    try {
+        const response = await fetch('/api/recordings');
+        const json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || 'Failed to load recordings');
+        }
+
+        return json.recordings || [];
+    } catch (error) {
+        console.error('Failed to load recordings list:', error);
+        return [];
+    }
+}
+
+function renderRecordingsList(recordings, visualizer) {
+    const container = document.getElementById('recordingsList');
+
+    if (!recordings || recordings.length === 0) {
+        container.innerHTML = '<span>No recordings available.</span>';
+        return;
+    }
+
+    container.innerHTML = '';
+
+    recordings.forEach(recording => {
+        const item = document.createElement('div');
+        item.className = 'recording-item';
+
+        const date = new Date(recording.modified);
+        const dateStr = date.toLocaleString();
+
+        item.innerHTML = `
+            <h4>${recording.filename}</h4>
+            <p>${dateStr} • ${(recording.size / 1024).toFixed(1)} KB</p>
+            <div class="button-group">
+                <button class="load-recording-btn" data-filename="${recording.filename}">Load</button>
+                <button class="view-heatmap-btn" data-filename="${recording.filename}">Heatmap</button>
+                <button class="delete-btn" data-filename="${recording.filename}">Delete</button>
+            </div>
+        `;
+
+        container.appendChild(item);
+    });
+
+    // Add event listeners for load buttons
+    container.querySelectorAll('.load-recording-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const filename = e.target.dataset.filename;
+            await loadRecordingFromFile(filename, visualizer);
+        });
+    });
+
+    // Add event listeners for heatmap buttons
+    container.querySelectorAll('.view-heatmap-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const filename = e.target.dataset.filename;
+            await loadHeatmapFromFile(filename, visualizer);
+        });
+    });
+
+    // Add event listeners for delete buttons
+    container.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const filename = e.target.dataset.filename;
+            await deleteRecording(filename, visualizer);
+        });
+    });
+}
+
+async function loadRecordingFromFile(filename, visualizer) {
+    try {
+        const response = await fetch(`/api/recordings/${encodeURIComponent(filename)}`);
+        const json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || 'Failed to load recording');
+        }
+
+        // Clear heatmap overlay when loading a recording
+        visualizer.setHeatmapOverlay(null);
+        visualizer.loadBattleData(json.recording);
+        console.log(`Loaded recording: ${filename}`);
+    } catch (error) {
+        console.error('Failed to load recording:', error);
+        alert(`Failed to load recording: ${error.message}`);
+    }
+}
+
+async function loadHeatmapFromFile(filename, visualizer) {
+    try {
+        const response = await fetch(`/api/heatmap/${encodeURIComponent(filename)}`);
+        const json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || 'Failed to load heatmap');
+        }
+
+        // Clear battle data and show heatmap only
+        visualizer.battleData = null;
+        visualizer.disableControls();
+        visualizer.setHeatmapOverlay(json.heatmap, `Heatmap: ${filename}`);
+        console.log(`Loaded heatmap for: ${filename}`);
+    } catch (error) {
+        console.error('Failed to load heatmap:', error);
+        alert(`Failed to load heatmap: ${error.message}`);
+    }
+}
+
+async function loadAggregatedHeatmap(visualizer) {
+    try {
+        const response = await fetch('/api/heatmap/aggregated');
+        const json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || 'Failed to load aggregated heatmap');
+        }
+
+        // Clear battle data and show heatmap only
+        visualizer.battleData = null;
+        visualizer.disableControls();
+        visualizer.setHeatmapOverlay(json.heatmap, `Aggregated Heatmap (${json.heatmap.recordingsCount} recordings)`);
+        console.log('Loaded aggregated heatmap');
+    } catch (error) {
+        console.error('Failed to load aggregated heatmap:', error);
+        alert(`Failed to load aggregated heatmap: ${error.message}`);
+    }
+}
+
+async function deleteRecording(filename, visualizer) {
+    if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/recordings/${encodeURIComponent(filename)}`, {
+            method: 'DELETE'
+        });
+        const json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || 'Failed to delete recording');
+        }
+
+        console.log(`Deleted recording: ${filename}`);
+
+        // Refresh the recordings list
+        const recordings = await loadRecordingsList();
+        renderRecordingsList(recordings, visualizer);
+
+        // Clear visualizer if the deleted recording was being displayed
+        if (visualizer.battleData) {
+            visualizer.battleData = null;
+            visualizer.disableControls();
+            visualizer.clearCanvas();
+        }
+    } catch (error) {
+        console.error('Failed to delete recording:', error);
+        alert(`Failed to delete recording: ${error.message}`);
+    }
+}
+
+function setupRecordingsUI(visualizer) {
+    const refreshBtn = document.getElementById('refreshRecordingsBtn');
+    const aggregatedBtn = document.getElementById('viewAggregatedHeatmapBtn');
+
+    // Initial load
+    loadRecordingsList().then(recordings => {
+        renderRecordingsList(recordings, visualizer);
+    });
+
+    // Refresh button
+    refreshBtn.addEventListener('click', async () => {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Loading...';
+
+        const recordings = await loadRecordingsList();
+        renderRecordingsList(recordings, visualizer);
+
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Refresh Recordings';
+    });
+
+    // Aggregated heatmap button
+    if (aggregatedBtn) {
+        aggregatedBtn.addEventListener('click', async () => {
+            aggregatedBtn.disabled = true;
+            aggregatedBtn.textContent = 'Loading...';
+
+            await loadAggregatedHeatmap(visualizer);
+
+            aggregatedBtn.disabled = false;
+            aggregatedBtn.textContent = 'View Aggregated Heatmap';
+        });
+    }
+}
+
 // Initialize visualizer when page loads
 window.addEventListener('DOMContentLoaded', () => {
     const visualizer = new BattleVisualizer('battleCanvas');
     setupSimulationUI(visualizer);
+    setupRecordingsUI(visualizer);
     console.log('Battle Visualizer initialized');
 });

@@ -115,8 +115,8 @@ for (let i = 0; i < compositions.length; i++) {
             entropy: buildEntropyConfig()
         });
         const battleResults = engine.runMultipleBattles(BATTLES_PER_MATCHUP, (eng) => {
-            const playerSquad = generator.createSquad(playerComp, 10, 45, true);
-            const enemySquad = generator.createSquad(enemyComp, 90, 54, false);
+            const playerSquad = generator.createSquad(playerComp, 10, 25, true);
+            const enemySquad = generator.createSquad(enemyComp, 40, 25, false);
 
             playerSquad.forEach(c => eng.addCreep(c));
             enemySquad.forEach(c => eng.addCreep(c));

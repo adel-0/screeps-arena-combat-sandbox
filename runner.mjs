@@ -5,6 +5,7 @@
  */
 
 import fs from 'fs';
+import path from 'path';
 import { runSimulation } from './core/simulation-runner.mjs';
 
 // Parse command line arguments
@@ -34,7 +35,7 @@ for (let i = 0; i < args.length; i++) {
             config.scenario = args[++i];
             break;
         case '--record':
-            config.record = args[++i] || 'battle-recording.json';
+            config.record = args[++i] || 'recordings/battle-recording.json';
             break;
         case '--no-entropy':
             config.entropy = false;
@@ -67,7 +68,7 @@ Options:
   --battles <n>           Number of battles to run (default: 100)
   --compositions <n>      Number of compositions for ELO mode (default: 20)
   --scenario <name>       Specific scenario name for predefined mode
-  --record <file>         Save recording of one battle (default: battle-recording.json)
+  --record <file>         Save recording of one battle (default: recordings/battle-recording.json)
   --no-entropy            Disable randomized terrain and spawn offsets
   --verbose, -v           Enable verbose output
   --help, -h              Show this help message
@@ -77,7 +78,7 @@ Examples:
   node runner.mjs --mode random --battles 500
   node runner.mjs --mode elo --compositions 30 --battles 200
   node runner.mjs --mode predefined --scenario ranged_kite
-  node runner.mjs --mode quick --record my-battle.json
+  node runner.mjs --mode quick --record recordings/my-battle.json
 `);
 }
 
@@ -122,6 +123,12 @@ function saveRecording(recording, filename) {
     if (!recording) {
         console.warn('\nWarning: Recording requested but no battle data was captured.');
         return;
+    }
+
+    // Ensure the recordings directory exists
+    const dir = path.dirname(filename);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
     }
 
     fs.writeFileSync(filename, JSON.stringify(recording, null, 2));

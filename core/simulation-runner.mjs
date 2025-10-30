@@ -12,10 +12,17 @@ const DEFAULT_ENGINE_ENTROPY = {
         allowZeroOffset: true
     },
     randomWalls: {
-        count: 8,
+        clusterCount: 6,
+        wallsPerCluster: 8,
         margin: 12,
-        minDistance: 4,
+        minClusterDistance: 10,
+        clusterRadius: 3,
         attempts: 40
+    },
+    randomTerrain: {
+        swampProbability: 0.05,
+        clusterSize: 2,
+        clusterProbability: 0.7
     }
 };
 
@@ -26,7 +33,8 @@ function getEngineEntropy(enabled) {
 
     return {
         spawnJitter: { ...DEFAULT_ENGINE_ENTROPY.spawnJitter },
-        randomWalls: { ...DEFAULT_ENGINE_ENTROPY.randomWalls }
+        randomWalls: { ...DEFAULT_ENGINE_ENTROPY.randomWalls },
+        randomTerrain: { ...DEFAULT_ENGINE_ENTROPY.randomTerrain }
     };
 }
 
@@ -158,8 +166,8 @@ function runMatchup({
     const engine = new CombatEngine(createEngineConfig(config, recordRequest.active));
 
     const results = engine.runMultipleBattles(iterations, (eng) => {
-        const playerSquad = generator.createSquad(playerComp, 10, 45, true);
-        const enemySquad = generator.createSquad(enemyComp, 90, 54, false);
+        const playerSquad = generator.createSquad(playerComp, 10, 25, true);
+        const enemySquad = generator.createSquad(enemyComp, 40, 25, false);
 
         playerSquad.forEach(c => eng.addCreep(c));
         enemySquad.forEach(c => eng.addCreep(c));
@@ -175,8 +183,8 @@ function runMatchup({
     };
 
     if (includeHeatmap) {
-        const width = engine.baseTerrain?.width || 100;
-        const height = engine.baseTerrain?.height || 100;
+        const width = engine.baseTerrain?.width || 50;
+        const height = engine.baseTerrain?.height || 50;
         runInfo.heatmap = buildHeatmap(results.battles, width, height);
     }
 
@@ -242,8 +250,8 @@ function runRandomMode(config) {
         const playerComp = generator.generateSquad(3000);
         const enemyComp = generator.generateSquad(3000);
 
-        const playerSquad = generator.createSquad(playerComp, 10, 45, true);
-        const enemySquad = generator.createSquad(enemyComp, 90, 54, false);
+        const playerSquad = generator.createSquad(playerComp, 10, 25, true);
+        const enemySquad = generator.createSquad(enemyComp, 40, 25, false);
 
         playerSquad.forEach(c => eng.addCreep(c));
         enemySquad.forEach(c => eng.addCreep(c));
@@ -257,8 +265,8 @@ function runRandomMode(config) {
     };
 
     if (config.heatmap) {
-        const width = engine.baseTerrain?.width || 100;
-        const height = engine.baseTerrain?.height || 100;
+        const width = engine.baseTerrain?.width || 50;
+        const height = engine.baseTerrain?.height || 50;
         runInfo.heatmap = buildHeatmap(results.battles, width, height);
     }
 
@@ -354,8 +362,8 @@ function runEloMode(config) {
 
             const engine = new CombatEngine(createEngineConfig(config, false));
             const results = engine.runMultipleBattles(totalBattlesPerMatchup, (eng) => {
-                const squadA = generator.createSquad(compA.composition, 10, 45, true);
-                const squadB = generator.createSquad(compB.composition, 90, 54, false);
+                const squadA = generator.createSquad(compA.composition, 10, 25, true);
+                const squadB = generator.createSquad(compB.composition, 40, 25, false);
 
                 squadA.forEach(c => eng.addCreep(c));
                 squadB.forEach(c => eng.addCreep(c));

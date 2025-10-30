@@ -17,7 +17,7 @@ export class Terrain {
      * @param {number} height - Map height
      * @param {string} defaultType - Default terrain type ('plain' or 'swamp')
      */
-    constructor(width = 100, height = 100, defaultType = 'swamp') {
+    constructor(width = 50, height = 50, defaultType = 'plain') {
         this.width = width;
         this.height = height;
         this.defaultCost = defaultType === 'swamp' ? FATIGUE_COST_SWAMP : FATIGUE_COST_PLAIN;

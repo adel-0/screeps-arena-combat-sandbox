@@ -40,6 +40,8 @@
             display: flex;
             flex: 1;
             overflow: hidden;
+            gap: 20px;
+            padding: 20px;
         }
 
         .canvas-container {
@@ -473,6 +475,46 @@
             border-radius: 2px;
             margin-right: 10px;
         }
+
+        .recording-item {
+            border: 1px solid #3a3a3e;
+            border-radius: 4px;
+            padding: 10px;
+            background: #2a2a2e;
+            margin-bottom: 8px;
+        }
+
+        .recording-item h4 {
+            font-size: 12px;
+            margin-bottom: 6px;
+            color: #8bb8e8;
+            word-break: break-word;
+        }
+
+        .recording-item p {
+            font-size: 11px;
+            color: #8b8d91;
+            margin-bottom: 8px;
+        }
+
+        .recording-item .button-group {
+            margin: 0;
+        }
+
+        .recording-item .button-group button {
+            font-size: 11px;
+            padding: 6px 8px;
+        }
+
+        .recording-item .button-group .delete-btn {
+            background: #5a3a3a;
+            border-color: #6a4a4a;
+        }
+
+        .recording-item .button-group .delete-btn:hover {
+            background: #6a4a4a;
+            border-color: #7a5a5a;
+        }
     </style>
 </head>
 <body>
@@ -483,6 +525,61 @@
     <div class="main-container">
         <div class="canvas-container">
             <canvas id="battleCanvas" width="800" height="800"></canvas>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 20px; width: 200px; flex-shrink: 0; align-self: center;">
+            <div class="legend">
+                <h3>LEGEND</h3>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #67c2a1;"></div>
+                    <span>Player Creep</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e27c79;"></div>
+                    <span>Enemy Creep</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #2a2a2e; color: #555; display: flex; align-items: center; justify-content: center; font-size: 12px;">✕</div>
+                    <span>Dead Creep</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #3a4a3f;"></div>
+                    <span>Swamp Terrain</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #33333a;"></div>
+                    <span>Plain Terrain</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #555555;"></div>
+                    <span>Wall (Impassable)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: none; border: 2px solid #e8c770;"></div>
+                    <span>Attack Action</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: none; border: 2px solid #8bb8e8;"></div>
+                    <span>Heal Action</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <h3>Playback Controls</h3>
+                <div class="button-group">
+                    <button id="playBtn" disabled>Play</button>
+                    <button id="pauseBtn" disabled>Pause</button>
+                    <button id="resetBtn" disabled>Reset</button>
+                </div>
+                <div class="speed-control">
+                    <label for="speedSlider">Speed: <span id="speedValue">3.00</span>x</label>
+                    <input type="range" id="speedSlider" min="1" max="10" value="3" step="1">
+                </div>
+                <div class="zoom-info">
+                    <p>Scroll to zoom • Drag to pan</p>
+                    <button id="resetZoomBtn">Reset View</button>
+                </div>
+            </div>
         </div>
 
         <div class="sidebar">
@@ -523,45 +620,24 @@
                             <input type="checkbox" id="simRecord">
                             <label for="simRecord">Capture Battle Recording</label>
                         </div>
-                        <div class="checkbox-row">
-                            <input type="checkbox" id="simHeatmap" checked>
-                            <label for="simHeatmap">Generate Heatmap</label>
-                        </div>
                         <button type="submit">Run Simulation</button>
                         <p class="simulation-status" id="simStatus"></p>
                     </form>
                 </div>
 
                 <div class="results-panel">
-                    <h3>Results</h3>
-                    <div id="resultsSummary" class="results-summary">
-                        <span>No runs yet.</span>
+                    <h3>Recordings</h3>
+                    <div id="recordingsContainer" class="results-summary">
+                        <div class="button-group" style="margin-bottom: 12px;">
+                            <button id="refreshRecordingsBtn">Refresh</button>
+                            <button id="viewAggregatedHeatmapBtn">Agg. Heatmap</button>
+                        </div>
+                        <div id="recordingsList">
+                            <span>No recordings.</span>
+                        </div>
                     </div>
                         <p id="heatmapStatus" class="heatmap-info" hidden>Heatmap overlay off.</p>
                 </div>
-
-            <div class="controls">
-                <h3>Controls</h3>
-                <div class="file-input-wrapper">
-                    <label for="battleFile" class="file-input-label">
-                        Load Battle Recording
-                    </label>
-                    <input type="file" id="battleFile" accept=".json">
-                </div>
-                <div class="button-group">
-                    <button id="playBtn" disabled>Play</button>
-                    <button id="pauseBtn" disabled>Pause</button>
-                    <button id="resetBtn" disabled>Reset</button>
-                </div>
-                <div class="speed-control">
-                    <label for="speedSlider">Speed: <span id="speedValue">1.0</span>x</label>
-                    <input type="range" id="speedSlider" min="1" max="10" value="5" step="1">
-                </div>
-                <div class="zoom-info">
-                    <p>Scroll to zoom • Drag to pan</p>
-                    <button id="resetZoomBtn">Reset View</button>
-                </div>
-            </div>
 
             <div class="timeline">
                 <h3>Timeline</h3>
@@ -600,38 +676,6 @@
                 <div class="stat-row">
                     <span>Healing Done:</span>
                     <span id="enemyHealing">0</span>
-                </div>
-            </div>
-
-            <div class="legend">
-                <h3>LEGEND</h3>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #67c2a1;"></div>
-                    <span>Player Creep</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #e27c79;"></div>
-                    <span>Enemy Creep</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #2a2a2e; color: #555; display: flex; align-items: center; justify-content: center; font-size: 12px;">✕</div>
-                    <span>Dead Creep</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #3a4a3f;"></div>
-                    <span>Swamp Terrain</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #33333a;"></div>
-                    <span>Plain Terrain</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: none; border: 2px solid #e8c770;"></div>
-                    <span>Attack Action</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: none; border: 2px solid #8bb8e8;"></div>
-                    <span>Heal Action</span>
                 </div>
             </div>
         </div>
