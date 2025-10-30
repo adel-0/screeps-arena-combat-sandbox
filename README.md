@@ -37,7 +37,9 @@ node runner.mjs --mode elo --compositions 50 --battles 500
 node runner.mjs --mode predefined --scenario ranged_kite --battles 100 -v
 ```
 
-Options: `--mode`, `--battles`, `--compositions`, `--scenario`, `--verbose`, `--help`
+Options: `--mode`, `--battles`, `--compositions`, `--scenario`, `--record`, `--no-entropy`, `--verbose`, `--help`
+
+By default the combat engine introduces small spawn offsets and a handful of random walls each battle to explore nearby configurations. Use `--no-entropy` for deterministic replays.
 
 ## Scenarios
 

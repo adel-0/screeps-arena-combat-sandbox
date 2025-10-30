@@ -10,6 +10,33 @@ import { ELOSystem } from './elo/elo-system.mjs';
 import { BODYPART_COST } from './core/constants.mjs';
 import fs from 'fs';
 
+const DEFAULT_ENGINE_ENTROPY = {
+    spawnJitter: {
+        radius: 3,
+        attempts: 18,
+        perUnitRadius: 1,
+        perUnitAttempts: 4,
+        allowZeroOffset: true
+    },
+    randomWalls: {
+        count: 8,
+        margin: 12,
+        minDistance: 4,
+        attempts: 40
+    }
+};
+
+function getEngineEntropy(enabled) {
+    if (!enabled) {
+        return false;
+    }
+
+    return {
+        spawnJitter: { ...DEFAULT_ENGINE_ENTROPY.spawnJitter },
+        randomWalls: { ...DEFAULT_ENGINE_ENTROPY.randomWalls }
+    };
+}
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 const config = {
@@ -18,7 +45,8 @@ const config = {
     compositions: 20,
     scenario: null,
     verbose: false,
-    record: null
+    record: null,
+    entropy: true
 };
 
 for (let i = 0; i < args.length; i++) {
@@ -37,6 +65,9 @@ for (let i = 0; i < args.length; i++) {
             break;
         case '--record':
             config.record = args[++i] || 'battle-recording.json';
+            break;
+        case '--no-entropy':
+            config.entropy = false;
             break;
         case '--verbose':
         case '-v':
@@ -67,6 +98,7 @@ Options:
   --compositions <n>      Number of compositions for ELO mode (default: 20)
   --scenario <name>       Specific scenario name for predefined mode
   --record <file>         Save recording of one battle (default: battle-recording.json)
+  --no-entropy            Disable randomized terrain and spawn offsets
   --verbose, -v           Enable verbose output
   --help, -h              Show this help message
 
@@ -104,7 +136,11 @@ function runQuickTest() {
         console.log(`Player: ${playerComp.length} units (${playerCost} energy)`);
         console.log(`Enemy: ${enemyComp.length} units (${enemyCost} energy)\n`);
 
-        const engine = new CombatEngine({ verbose: config.verbose, recordBattle: config.record !== null });
+        const engine = new CombatEngine({
+            verbose: config.verbose,
+            recordBattle: config.record !== null,
+            entropy: getEngineEntropy(config.entropy)
+        });
         const results = engine.runMultipleBattles(10, (eng) => {
             const playerSquad = generator.createSquad(playerComp, 10, 45, true);
             const enemySquad = generator.createSquad(enemyComp, 90, 54, false);
@@ -131,7 +167,11 @@ function runRandomTest() {
     console.log(`Running ${config.battles} battles with random compositions...\n`);
 
     const generator = new ScenarioGenerator({ maxEnergy: 3000 });
-    const engine = new CombatEngine({ verbose: config.verbose, recordBattle: config.record !== null });
+    const engine = new CombatEngine({
+        verbose: config.verbose,
+        recordBattle: config.record !== null,
+        entropy: getEngineEntropy(config.entropy)
+    });
 
     const results = engine.runMultipleBattles(config.battles, (eng) => {
         const playerComp = generator.generateSquad(3000);
@@ -184,7 +224,9 @@ function runELOTournament() {
             const compA = compositions[i];
             const compB = compositions[j];
 
-            const engine = new CombatEngine();
+            const engine = new CombatEngine({
+                entropy: getEngineEntropy(config.entropy)
+            });
             const results = engine.runMultipleBattles(config.battles / 10, (eng) => {
                 const squadA = generator.createSquad(compA.composition, 10, 45, true);
                 const squadB = generator.createSquad(compB.composition, 90, 54, false);
@@ -249,7 +291,11 @@ function runPredefinedScenario() {
         const playerComp = composition;
         const enemyComp = generator.getPredefinedComposition(enemy);
 
-        const engine = new CombatEngine({ verbose: config.verbose, recordBattle: config.record !== null });
+        const engine = new CombatEngine({
+            verbose: config.verbose,
+            recordBattle: config.record !== null,
+            entropy: getEngineEntropy(config.entropy)
+        });
         const results = engine.runMultipleBattles(config.battles, (eng) => {
             const playerSquad = generator.createSquad(playerComp, 10, 45, true);
             const enemySquad = generator.createSquad(enemyComp, 90, 54, false);

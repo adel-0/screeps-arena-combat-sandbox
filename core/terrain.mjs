@@ -27,6 +27,17 @@ export class Terrain {
     }
 
     /**
+     * Create a deep copy of this terrain instance
+     * @returns {Terrain} Cloned terrain
+     */
+    clone() {
+        const cloned = new Terrain(this.width, this.height, this.defaultCost === FATIGUE_COST_SWAMP ? 'swamp' : 'plain');
+        cloned.defaultCost = this.defaultCost;
+        cloned.terrainMap = { ...this.terrainMap };
+        return cloned;
+    }
+
+    /**
      * Get movement cost at position
      * @param {number} x - X coordinate
      * @param {number} y - Y coordinate

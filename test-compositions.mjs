@@ -10,6 +10,29 @@ import { BODYPART_COST } from './core/constants.mjs';
 
 const BATTLES_PER_MATCHUP = 20;
 
+const ENTROPY_TEMPLATE = {
+    spawnJitter: {
+        radius: 3,
+        attempts: 18,
+        perUnitRadius: 1,
+        perUnitAttempts: 4,
+        allowZeroOffset: true
+    },
+    randomWalls: {
+        count: 8,
+        margin: 12,
+        minDistance: 4,
+        attempts: 40
+    }
+};
+
+function buildEntropyConfig() {
+    return {
+        spawnJitter: { ...ENTROPY_TEMPLATE.spawnJitter },
+        randomWalls: { ...ENTROPY_TEMPLATE.randomWalls }
+    };
+}
+
 const compositions = [
     'current_strategy',
     'ranged_kite',
@@ -87,7 +110,10 @@ for (let i = 0; i < compositions.length; i++) {
         const playerComp = generator.getPredefinedComposition(compA);
         const enemyComp = generator.getPredefinedComposition(compB);
 
-        const engine = new CombatEngine({ verbose: false });
+        const engine = new CombatEngine({
+            verbose: false,
+            entropy: buildEntropyConfig()
+        });
         const battleResults = engine.runMultipleBattles(BATTLES_PER_MATCHUP, (eng) => {
             const playerSquad = generator.createSquad(playerComp, 10, 45, true);
             const enemySquad = generator.createSquad(enemyComp, 90, 54, false);

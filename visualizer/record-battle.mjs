@@ -74,7 +74,8 @@ async function main() {
         maxTicks: 500,
         terrain: new Terrain(38, 38, 'swamp'),
         verbose: true,
-        recordBattle: true
+        recordBattle: true,
+        entropy: false
     });
 
     // Setup battle

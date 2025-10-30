@@ -5,6 +5,201 @@
 import { MockCreep } from './creep.mjs';
 import { Terrain } from './terrain.mjs';
 
+const DEFAULT_SPAWN_JITTER = {
+    radius: 2,
+    attempts: 12,
+    perUnitRadius: 1,
+    perUnitAttempts: 4,
+    allowZeroOffset: true,
+    preserveFormation: true
+};
+
+const DEFAULT_RANDOM_WALLS = {
+    count: 6,
+    margin: 8,
+    minDistance: 3,
+    attempts: 30
+};
+
+const DEFAULT_ENTROPY = {
+    spawnJitter: DEFAULT_SPAWN_JITTER,
+    randomWalls: DEFAULT_RANDOM_WALLS
+};
+
+function copySpawnJitterConfig(cfg) {
+    return {
+        radius: cfg.radius,
+        attempts: cfg.attempts,
+        perUnitRadius: cfg.perUnitRadius,
+        perUnitAttempts: cfg.perUnitAttempts,
+        allowZeroOffset: cfg.allowZeroOffset,
+        preserveFormation: cfg.preserveFormation
+    };
+}
+
+function copyRandomWallsConfig(cfg) {
+    return {
+        count: cfg.count,
+        margin: cfg.margin,
+        minDistance: cfg.minDistance,
+        attempts: cfg.attempts
+    };
+}
+
+function normalizeSpawnJitter(value) {
+    if (value === false || value === null) {
+        return null;
+    }
+
+    if (value === undefined) {
+        return copySpawnJitterConfig(DEFAULT_SPAWN_JITTER);
+    }
+
+    if (value === true) {
+        return copySpawnJitterConfig(DEFAULT_SPAWN_JITTER);
+    }
+
+    if (typeof value === 'number') {
+        if (value <= 0) {
+            return null;
+        }
+        return {
+            radius: value,
+            attempts: DEFAULT_SPAWN_JITTER.attempts,
+            perUnitRadius: DEFAULT_SPAWN_JITTER.perUnitRadius,
+            perUnitAttempts: DEFAULT_SPAWN_JITTER.perUnitAttempts,
+            allowZeroOffset: DEFAULT_SPAWN_JITTER.allowZeroOffset,
+            preserveFormation: DEFAULT_SPAWN_JITTER.preserveFormation
+        };
+    }
+
+    if (typeof value !== 'object') {
+        return null;
+    }
+
+    const radius = value.radius ?? value.range ?? DEFAULT_SPAWN_JITTER.radius;
+    if (radius <= 0) {
+        return null;
+    }
+
+    return {
+        radius,
+        attempts: value.attempts ?? DEFAULT_SPAWN_JITTER.attempts,
+        perUnitRadius: value.perUnitRadius ?? DEFAULT_SPAWN_JITTER.perUnitRadius,
+        perUnitAttempts: value.perUnitAttempts ?? DEFAULT_SPAWN_JITTER.perUnitAttempts,
+        allowZeroOffset: value.allowZeroOffset !== undefined ? value.allowZeroOffset : DEFAULT_SPAWN_JITTER.allowZeroOffset,
+        preserveFormation: value.preserveFormation !== undefined ? value.preserveFormation : DEFAULT_SPAWN_JITTER.preserveFormation
+    };
+}
+
+function normalizeRandomWalls(value) {
+    if (value === false || value === null) {
+        return null;
+    }
+
+    if (value === undefined) {
+        return copyRandomWallsConfig(DEFAULT_RANDOM_WALLS);
+    }
+
+    if (value === true) {
+        return copyRandomWallsConfig(DEFAULT_RANDOM_WALLS);
+    }
+
+    if (typeof value === 'number') {
+        if (value <= 0) {
+            return null;
+        }
+        return {
+            count: value,
+            margin: DEFAULT_RANDOM_WALLS.margin,
+            minDistance: DEFAULT_RANDOM_WALLS.minDistance,
+            attempts: DEFAULT_RANDOM_WALLS.attempts
+        };
+    }
+
+    if (typeof value !== 'object') {
+        return null;
+    }
+
+    const count = value.count ?? DEFAULT_RANDOM_WALLS.count;
+    if (count <= 0) {
+        return null;
+    }
+
+    return {
+        count,
+        margin: value.margin ?? DEFAULT_RANDOM_WALLS.margin,
+        minDistance: value.minDistance ?? DEFAULT_RANDOM_WALLS.minDistance,
+        attempts: value.attempts ?? DEFAULT_RANDOM_WALLS.attempts
+    };
+}
+
+function normalizeEntropyConfig(entropy) {
+    if (entropy === false) {
+        return null;
+    }
+
+    if (entropy === undefined || entropy === null) {
+        return {
+            spawnJitter: copySpawnJitterConfig(DEFAULT_SPAWN_JITTER),
+            randomWalls: copyRandomWallsConfig(DEFAULT_RANDOM_WALLS)
+        };
+    }
+
+    if (entropy === true) {
+        entropy = {};
+    }
+
+    if (typeof entropy !== 'object') {
+        const spawnJitter = normalizeSpawnJitter(entropy);
+        return spawnJitter ? { spawnJitter, randomWalls: null } : null;
+    }
+
+    const hasSpawnSetting = Object.prototype.hasOwnProperty.call(entropy, 'spawnJitter') ||
+        Object.prototype.hasOwnProperty.call(entropy, 'spawnOffset') ||
+        Object.prototype.hasOwnProperty.call(entropy, 'spawn');
+
+    const hasWallSetting = Object.prototype.hasOwnProperty.call(entropy, 'randomWalls') ||
+        Object.prototype.hasOwnProperty.call(entropy, 'walls');
+
+    const useDefaults = !hasSpawnSetting && !hasWallSetting && Object.keys(entropy).length === 0;
+
+    const spawnSource = hasSpawnSetting
+        ? (entropy.spawnJitter ?? entropy.spawnOffset ?? entropy.spawn)
+        : (useDefaults ? DEFAULT_SPAWN_JITTER : undefined);
+
+    const wallSource = hasWallSetting
+        ? (entropy.randomWalls ?? entropy.walls)
+        : (useDefaults ? DEFAULT_RANDOM_WALLS : undefined);
+
+    const spawnJitter = normalizeSpawnJitter(spawnSource);
+    const randomWalls = normalizeRandomWalls(wallSource);
+
+    const result = {};
+    if (spawnJitter) {
+        result.spawnJitter = spawnJitter;
+    }
+    if (randomWalls) {
+        result.randomWalls = randomWalls;
+    }
+
+    return Object.keys(result).length > 0 ? result : null;
+}
+
+function cloneTerrainInstance(terrain) {
+    if (!terrain) {
+        return null;
+    }
+    if (typeof terrain.clone === 'function') {
+        return terrain.clone();
+    }
+
+    const cloned = new Terrain(terrain.width, terrain.height, 'plain');
+    cloned.defaultCost = terrain.defaultCost;
+    cloned.terrainMap = { ...terrain.terrainMap };
+    return cloned;
+}
+
 export class CombatEngine {
     /**
      * Create combat engine
@@ -12,9 +207,13 @@ export class CombatEngine {
      */
     constructor(config = {}) {
         this.maxTicks = config.maxTicks || 1000;
-        this.terrain = config.terrain || new Terrain(100, 100, 'swamp');
+        this.randomSource = typeof config.random === 'function' ? config.random : Math.random;
+        const baseTerrain = config.terrain ? cloneTerrainInstance(config.terrain) : new Terrain(100, 100, 'swamp');
+        this.baseTerrain = baseTerrain;
+        this.terrain = cloneTerrainInstance(this.baseTerrain);
         this.verbose = config.verbose || false;
         this.recordBattle = config.recordBattle || false;
+        this.entropy = normalizeEntropyConfig(config.entropy);
 
         this.reset();
     }
@@ -22,7 +221,7 @@ export class CombatEngine {
     /**
      * Reset engine state
      */
-    reset() {
+    reset(battleContext = null) {
         this.creeps = [];
         this.tick = 0;
         this.battleLog = [];
@@ -32,6 +231,12 @@ export class CombatEngine {
             terrain: null,
             metadata: {}
         };
+
+        this.terrain = cloneTerrainInstance(this.baseTerrain);
+
+        if (this.entropy && this.entropy.randomWalls) {
+            this.applyTerrainEntropy(battleContext);
+        }
     }
 
     /**
@@ -434,9 +639,13 @@ export class CombatEngine {
         const results = [];
 
         for (let i = 0; i < iterations; i++) {
-            this.reset();
-            setupFunction(this);
-            results.push(this.runBattle());
+            const battleContext = this.createBattleContext(i);
+            this.reset(battleContext);
+            const setupResult = setupFunction(this, battleContext) || {};
+            this.applySpawnEntropy(battleContext, setupResult);
+            const battleResult = this.runBattle();
+            battleResult.context = battleContext;
+            results.push(battleResult);
         }
 
         // Calculate aggregate statistics
@@ -454,5 +663,302 @@ export class CombatEngine {
             avgTicks,
             battles: results
         };
+    }
+
+    createBattleContext(iteration) {
+        return {
+            iteration,
+            terrainMutations: null,
+            spawnOffsets: null,
+            perUnitJitter: null
+        };
+    }
+
+    applyTerrainEntropy(battleContext) {
+        const config = this.entropy?.randomWalls;
+        if (!config) {
+            return;
+        }
+
+        const { count, margin, minDistance, attempts } = config;
+        const placedWalls = [];
+
+        const minX = Math.max(0, margin);
+        const maxX = Math.min(this.terrain.width - 1, this.terrain.width - margin - 1);
+        const minY = Math.max(0, margin);
+        const maxY = Math.min(this.terrain.height - 1, this.terrain.height - margin - 1);
+
+        if (maxX < minX || maxY < minY) {
+            return;
+        }
+
+        for (let i = 0; i < count; i++) {
+            let placed = false;
+
+            for (let attempt = 0; attempt < attempts; attempt++) {
+                const x = this.randomInt(minX, maxX);
+                const y = this.randomInt(minY, maxY);
+
+                if (!this.terrain.isWalkable(x, y)) {
+                    continue;
+                }
+
+                let tooClose = false;
+                for (const wall of placedWalls) {
+                    if (Math.abs(wall.x - x) + Math.abs(wall.y - y) <= minDistance) {
+                        tooClose = true;
+                        break;
+                    }
+                }
+
+                if (tooClose) {
+                    continue;
+                }
+
+                this.terrain.setTerrain(x, y, 'wall');
+                placedWalls.push({ x, y });
+                placed = true;
+                break;
+            }
+
+            if (!placed) {
+                break;
+            }
+        }
+
+        if (battleContext) {
+            battleContext.terrainMutations = battleContext.terrainMutations || {};
+            battleContext.terrainMutations.walls = placedWalls;
+        }
+    }
+
+    applySpawnEntropy(battleContext, setupResult = {}) {
+        const config = this.entropy?.spawnJitter;
+        if (!config) {
+            return;
+        }
+
+        const offsetsFromSetup = setupResult.spawnOffsets || {};
+        const existingOffsets = battleContext?.spawnOffsets || {};
+
+        const occupied = new Set();
+        for (const creep of this.creeps) {
+            occupied.add(`${creep.x},${creep.y}`);
+        }
+
+        const offsets = {
+            player: { dx: 0, dy: 0 },
+            enemy: { dx: 0, dy: 0 }
+        };
+
+        const applyForTeam = (teamFlag, label) => {
+            const creeps = this.creeps.filter(c => c.my === teamFlag);
+            if (creeps.length === 0) {
+                return;
+            }
+
+            for (const creep of creeps) {
+                occupied.delete(`${creep.x},${creep.y}`);
+            }
+
+            const preferred = offsetsFromSetup[label] ?? existingOffsets[label];
+            const resolved = this.resolveGroupOffsetWithFallback(creeps, occupied, config, preferred);
+
+            if (resolved.dx !== 0 || resolved.dy !== 0) {
+                for (const creep of creeps) {
+                    creep.x += resolved.dx;
+                    creep.y += resolved.dy;
+                }
+            }
+
+            for (const creep of creeps) {
+                occupied.add(`${creep.x},${creep.y}`);
+            }
+
+            offsets[label] = resolved;
+        };
+
+        applyForTeam(true, 'player');
+        applyForTeam(false, 'enemy');
+
+        let perUnitLog = null;
+        if (config.perUnitRadius && config.perUnitRadius > 0 && config.preserveFormation === false) {
+            perUnitLog = this.applyPerUnitJitter(config, occupied);
+        }
+
+        if (battleContext) {
+            battleContext.spawnOffsets = offsets;
+            if (perUnitLog && perUnitLog.length > 0) {
+                battleContext.perUnitJitter = perUnitLog;
+            }
+        }
+
+        this.updateOccupancy();
+    }
+
+    resolveGroupOffsetWithFallback(creeps, occupied, config, preferredOffset) {
+        if (preferredOffset && this.isGroupOffsetValid(creeps, occupied, preferredOffset)) {
+            return {
+                dx: preferredOffset.dx || 0,
+                dy: preferredOffset.dy || 0
+            };
+        }
+
+        return this.findGroupOffset(creeps, occupied, config);
+    }
+
+    findGroupOffset(creeps, occupied, config) {
+        const radius = Math.max(0, config.radius || 0);
+        const attempts = Math.max(1, config.attempts || 1);
+
+        if (radius === 0) {
+            return { dx: 0, dy: 0 };
+        }
+
+        for (let i = 0; i < attempts; i++) {
+            const dx = this.randomInt(-radius, radius);
+            const dy = this.randomInt(-radius, radius);
+
+            if (dx === 0 && dy === 0) {
+                continue;
+            }
+
+            if (this.isGroupOffsetValid(creeps, occupied, { dx, dy })) {
+                return { dx, dy };
+            }
+        }
+
+        if (config.allowZeroOffset === false) {
+            for (let distance = radius; distance > 0; distance--) {
+                const fallbacks = [
+                    { dx: distance, dy: 0 },
+                    { dx: -distance, dy: 0 },
+                    { dx: 0, dy: distance },
+                    { dx: 0, dy: -distance }
+                ];
+
+                for (const fallback of fallbacks) {
+                    if (this.isGroupOffsetValid(creeps, occupied, fallback)) {
+                        return fallback;
+                    }
+                }
+            }
+        }
+
+        return { dx: 0, dy: 0 };
+    }
+
+    isGroupOffsetValid(creeps, occupied, offset) {
+        const dx = offset?.dx || 0;
+        const dy = offset?.dy || 0;
+
+        for (const creep of creeps) {
+            const nx = creep.x + dx;
+            const ny = creep.y + dy;
+
+            if (!this.isValidSpawnPosition(nx, ny, occupied)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    applyPerUnitJitter(config, occupied) {
+        const radius = Math.max(0, config.perUnitRadius || 0);
+        const attempts = Math.max(1, config.perUnitAttempts || 1);
+        const log = [];
+
+        if (radius === 0) {
+            return log;
+        }
+
+        const creeps = [...this.creeps];
+
+        for (const creep of creeps) {
+            if (!creep.isAlive()) {
+                continue;
+            }
+
+            const originalKey = `${creep.x},${creep.y}`;
+            occupied.delete(originalKey);
+
+            let moved = false;
+
+            for (let attempt = 0; attempt < attempts; attempt++) {
+                const dx = this.randomInt(-radius, radius);
+                const dy = this.randomInt(-radius, radius);
+
+                if (dx === 0 && dy === 0) {
+                    continue;
+                }
+
+                const nx = creep.x + dx;
+                const ny = creep.y + dy;
+
+                if (!this.isValidSpawnPosition(nx, ny, occupied)) {
+                    continue;
+                }
+
+                creep.x = nx;
+                creep.y = ny;
+                log.push({ id: creep.id, dx, dy });
+                moved = true;
+                break;
+            }
+
+            if (!moved && config.allowZeroOffset === false) {
+                const fallbackOffsets = [
+                    { dx: 1, dy: 0 },
+                    { dx: -1, dy: 0 },
+                    { dx: 0, dy: 1 },
+                    { dx: 0, dy: -1 }
+                ];
+
+                for (const fallback of fallbackOffsets) {
+                    const nx = creep.x + fallback.dx;
+                    const ny = creep.y + fallback.dy;
+
+                    if (this.isValidSpawnPosition(nx, ny, occupied)) {
+                        creep.x = nx;
+                        creep.y = ny;
+                        log.push({ id: creep.id, dx: fallback.dx, dy: fallback.dy });
+                        moved = true;
+                        break;
+                    }
+                }
+            }
+
+            occupied.add(`${creep.x},${creep.y}`);
+        }
+
+        return log;
+    }
+
+    isValidSpawnPosition(x, y, occupied) {
+        if (x < 0 || y < 0 || x >= this.terrain.width || y >= this.terrain.height) {
+            return false;
+        }
+
+        if (!this.terrain.isWalkable(x, y)) {
+            return false;
+        }
+
+        const key = `${x},${y}`;
+        return !occupied.has(key);
+    }
+
+    randomInt(min, max) {
+        if (max < min) {
+            const tmp = min;
+            min = max;
+            max = tmp;
+        }
+
+        if (max === min) {
+            return min;
+        }
+
+        return Math.floor(this.randomSource() * (max - min + 1)) + min;
     }
 }
