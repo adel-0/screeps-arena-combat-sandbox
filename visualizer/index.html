@@ -69,6 +69,156 @@
             gap: 16px;
         }
 
+        .simulation-panel,
+        .results-panel {
+            background: #33333a;
+            border: 1px solid #3a3a3e;
+            padding: 16px;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .simulation-panel h3,
+        .results-panel h3 {
+            margin-bottom: 12px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #c5c8c6;
+        }
+
+        .simulation-panel form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-row label {
+            font-size: 12px;
+            color: #b8bbbf;
+        }
+
+        .form-row select,
+        .form-row input[type="number"] {
+            background: #2a2a2e;
+            border: 1px solid #4a4a52;
+            border-radius: 4px;
+            padding: 8px;
+            color: #c5c8c6;
+            font-size: 13px;
+        }
+
+        .form-row input[type="number"]::-webkit-inner-spin-button,
+        .form-row input[type="number"]::-webkit-outer-spin-button {
+            appearance: none;
+            margin: 0;
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #b8bbbf;
+        }
+
+        .checkbox-row input[type="checkbox"] {
+            accent-color: #8bb8e8;
+        }
+
+        .simulation-panel button[type="submit"] {
+            margin-top: 4px;
+        }
+
+        .simulation-status {
+            min-height: 18px;
+            font-size: 12px;
+            color: #8bb8e8;
+            text-align: center;
+        }
+
+        .results-summary {
+            font-size: 12px;
+            color: #b8bbbf;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .results-summary strong {
+            color: #c5c8c6;
+        }
+
+        .results-run {
+            border: 1px solid #3a3a3e;
+            border-radius: 4px;
+            padding: 10px;
+            background: #2a2a2e;
+        }
+
+        .results-run h4 {
+            font-size: 13px;
+            margin-bottom: 6px;
+            color: #8bb8e8;
+        }
+
+        .results-run p {
+            margin-bottom: 4px;
+        }
+
+        .results-run.has-heatmap,
+        .results-run.interactive {
+            cursor: pointer;
+        }
+
+        .results-run.selected {
+            border-color: #8bb8e8;
+            box-shadow: 0 0 6px rgba(139, 184, 232, 0.4);
+        }
+
+        .results-note {
+            font-size: 11px;
+            color: #8bb8e8;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            color: #c5c8c6;
+        }
+
+        .results-table th,
+        .results-table td {
+            border: 1px solid #3a3a3e;
+            padding: 6px;
+            text-align: center;
+        }
+
+        .results-table th {
+            background: #2a2a2e;
+            font-weight: 600;
+        }
+
+        .results-table tbody tr:nth-child(even) {
+            background: #2f2f34;
+        }
+
+        .heatmap-info {
+            margin-top: 12px;
+            font-size: 12px;
+            color: #8bb8e8;
+            text-align: center;
+        }
+
         .stats-panel {
             background: #33333a;
             border: 1px solid #3a3a3e;
@@ -336,6 +486,60 @@
         </div>
 
         <div class="sidebar">
+                <div class="simulation-panel">
+                    <h3>Simulation Runner</h3>
+                    <form id="simulationForm">
+                        <div class="form-row">
+                            <label for="simMode">Mode</label>
+                            <select id="simMode" name="mode">
+                                <option value="quick">Quick</option>
+                                <option value="random">Random</option>
+                                <option value="predefined">Predefined</option>
+                                <option value="elo">ELO</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="simBattles">Battles</label>
+                            <input type="number" id="simBattles" name="battles" min="1" value="100">
+                        </div>
+                        <div class="form-row" id="compositionsRow">
+                            <label for="simCompositions">Compositions</label>
+                            <input type="number" id="simCompositions" name="compositions" min="2" value="20">
+                        </div>
+                        <div class="form-row" id="scenarioRow">
+                            <label for="simScenario">Scenario</label>
+                            <select id="simScenario" name="scenario">
+                                <option value="ranged_kite">ranged_kite</option>
+                                <option value="heavy_melee">heavy_melee</option>
+                                <option value="hybrid_squad">hybrid_squad</option>
+                                <option value="current_strategy">current_strategy</option>
+                            </select>
+                        </div>
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="simEntropy" checked>
+                            <label for="simEntropy">Enable Entropy</label>
+                        </div>
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="simRecord">
+                            <label for="simRecord">Capture Battle Recording</label>
+                        </div>
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="simHeatmap" checked>
+                            <label for="simHeatmap">Generate Heatmap</label>
+                        </div>
+                        <button type="submit">Run Simulation</button>
+                        <p class="simulation-status" id="simStatus"></p>
+                    </form>
+                </div>
+
+                <div class="results-panel">
+                    <h3>Results</h3>
+                    <div id="resultsSummary" class="results-summary">
+                        <span>No runs yet.</span>
+                    </div>
+                        <p id="heatmapStatus" class="heatmap-info" hidden>Heatmap overlay off.</p>
+                </div>
+
             <div class="controls">
                 <h3>Controls</h3>
                 <div class="file-input-wrapper">

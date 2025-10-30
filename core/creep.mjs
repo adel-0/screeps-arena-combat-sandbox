@@ -350,6 +350,8 @@ export class MockCreep {
             damageDealt: this.damageDealt,
             healingDone: this.healingDone,
             healingReceived: this.healingReceived,
+            x: this.x,
+            y: this.y,
             bodyParts: this.body.map(p => ({ type: p.type, hits: p.hits }))
         };
     }

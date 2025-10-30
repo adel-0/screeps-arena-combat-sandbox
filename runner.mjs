@@ -4,38 +4,8 @@
  * Test Runner - Execute combat simulations and generate reports
  */
 
-import { CombatEngine } from './core/combat-engine.mjs';
-import { ScenarioGenerator } from './scenarios/scenario-generator.mjs';
-import { ELOSystem } from './elo/elo-system.mjs';
-import { BODYPART_COST } from './core/constants.mjs';
 import fs from 'fs';
-
-const DEFAULT_ENGINE_ENTROPY = {
-    spawnJitter: {
-        radius: 3,
-        attempts: 18,
-        perUnitRadius: 1,
-        perUnitAttempts: 4,
-        allowZeroOffset: true
-    },
-    randomWalls: {
-        count: 8,
-        margin: 12,
-        minDistance: 4,
-        attempts: 40
-    }
-};
-
-function getEngineEntropy(enabled) {
-    if (!enabled) {
-        return false;
-    }
-
-    return {
-        spawnJitter: { ...DEFAULT_ENGINE_ENTROPY.spawnJitter },
-        randomWalls: { ...DEFAULT_ENGINE_ENTROPY.randomWalls }
-    };
-}
+import { runSimulation } from './core/simulation-runner.mjs';
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -55,10 +25,10 @@ for (let i = 0; i < args.length; i++) {
             config.mode = args[++i];
             break;
         case '--battles':
-            config.battles = parseInt(args[++i]);
+            config.battles = parseInt(args[++i], 10);
             break;
         case '--compositions':
-            config.compositions = parseInt(args[++i]);
+            config.compositions = parseInt(args[++i], 10);
             break;
         case '--scenario':
             config.scenario = args[++i];
@@ -111,228 +81,28 @@ Examples:
 `);
 }
 
-/**
- * Run quick test mode
- */
-function runQuickTest() {
-    console.log('=== QUICK TEST MODE ===\n');
+function printRunSummary(run) {
+    console.log(`\n--- ${run.label} ---`);
 
-    const generator = new ScenarioGenerator();
-    const scenarios = [
-        { name: 'Ranged Kite vs Heavy Melee', player: 'ranged_kite', enemy: 'heavy_melee' },
-        { name: 'Current Strategy vs Heavy Melee', player: 'current_strategy', enemy: 'heavy_melee' },
-        { name: 'Hybrid Squad vs Heavy Melee', player: 'hybrid_squad', enemy: 'heavy_melee' }
-    ];
-
-    for (const scenario of scenarios) {
-        console.log(`\n--- ${scenario.name} ---`);
-
-        const playerComp = generator.getPredefinedComposition(scenario.player);
-        const enemyComp = generator.getPredefinedComposition(scenario.enemy);
-
-        const playerCost = playerComp.reduce((sum, u) => sum + (u.cost || calculateCost(u.body)), 0);
-        const enemyCost = enemyComp.reduce((sum, u) => sum + (u.cost || calculateCost(u.body)), 0);
-
-        console.log(`Player: ${playerComp.length} units (${playerCost} energy)`);
-        console.log(`Enemy: ${enemyComp.length} units (${enemyCost} energy)\n`);
-
-        const engine = new CombatEngine({
-            verbose: config.verbose,
-            recordBattle: config.record !== null,
-            entropy: getEngineEntropy(config.entropy)
-        });
-        const results = engine.runMultipleBattles(10, (eng) => {
-            const playerSquad = generator.createSquad(playerComp, 10, 45, true);
-            const enemySquad = generator.createSquad(enemyComp, 90, 54, false);
-
-            playerSquad.forEach(c => eng.addCreep(c));
-            enemySquad.forEach(c => eng.addCreep(c));
-        });
-
-        printBattleResults(results);
-
-        // Save recording after first scenario if requested
-        if (config.record) {
-            saveRecording(engine);
-            config.record = null; // Only record once
-        }
+    if (typeof run.playerCost === 'number' && typeof run.enemyCost === 'number') {
+        console.log(`Player Energy: ${run.playerCost}`);
+        console.log(`Enemy Energy: ${run.enemyCost}`);
     }
+
+    const summary = run.summary;
+    console.log(`Results over ${summary.iterations} battles:`);
+    console.log(`  Wins: ${summary.wins} (${(summary.winRate * 100).toFixed(1)}%)`);
+    console.log(`  Losses: ${summary.losses} (${((summary.losses / summary.iterations) * 100).toFixed(1)}%)`);
+    console.log(`  Draws: ${summary.draws} (${((summary.draws / summary.iterations) * 100).toFixed(1)}%)`);
+    console.log(`  Avg Duration: ${summary.avgTicks.toFixed(1)} ticks`);
+    console.log(`  Player Avg Damage: ${summary.player.avgDamage.toFixed(1)} | Avg Healing: ${summary.player.avgHealing.toFixed(1)} | Avg Survivors: ${summary.player.avgSurvivors.toFixed(1)}`);
+    console.log(`  Enemy Avg Damage: ${summary.enemy.avgDamage.toFixed(1)} | Avg Healing: ${summary.enemy.avgHealing.toFixed(1)} | Avg Survivors: ${summary.enemy.avgSurvivors.toFixed(1)}`);
 }
 
-/**
- * Run random composition test
- */
-function runRandomTest() {
-    console.log('=== RANDOM COMPOSITION TEST ===\n');
-    console.log(`Running ${config.battles} battles with random compositions...\n`);
-
-    const generator = new ScenarioGenerator({ maxEnergy: 3000 });
-    const engine = new CombatEngine({
-        verbose: config.verbose,
-        recordBattle: config.record !== null,
-        entropy: getEngineEntropy(config.entropy)
-    });
-
-    const results = engine.runMultipleBattles(config.battles, (eng) => {
-        const playerComp = generator.generateSquad(3000);
-        const enemyComp = generator.generateSquad(3000);
-
-        const playerSquad = generator.createSquad(playerComp, 10, 45, true);
-        const enemySquad = generator.createSquad(enemyComp, 90, 54, false);
-
-        playerSquad.forEach(c => eng.addCreep(c));
-        enemySquad.forEach(c => eng.addCreep(c));
-    });
-
-    printBattleResults(results);
-
-    if (config.record) {
-        saveRecording(engine);
-    }
-}
-
-/**
- * Run ELO rating tournament
- */
-function runELOTournament() {
-    console.log('=== ELO RATING TOURNAMENT ===\n');
-    console.log(`Generating ${config.compositions} compositions...`);
-
-    const generator = new ScenarioGenerator({ maxEnergy: 3000 });
-    const elo = new ELOSystem();
-
-    // Generate compositions
-    const compositions = [];
-    const predefined = ['ranged_kite', 'heavy_melee', 'hybrid_squad', 'current_strategy'];
-
-    predefined.forEach(name => {
-        const comp = generator.getPredefinedComposition(name);
-        compositions.push({ id: name, composition: comp });
-    });
-
-    for (let i = 0; i < config.compositions - predefined.length; i++) {
-        const comp = generator.generateSquad(3000);
-        compositions.push({ id: `random_${i}`, composition: comp });
-    }
-
-    console.log(`Running ${config.battles} battles per matchup...\n`);
-
-    // Round-robin tournament
-    let battleCount = 0;
-    for (let i = 0; i < compositions.length; i++) {
-        for (let j = i + 1; j < compositions.length; j++) {
-            const compA = compositions[i];
-            const compB = compositions[j];
-
-            const engine = new CombatEngine({
-                entropy: getEngineEntropy(config.entropy)
-            });
-            const results = engine.runMultipleBattles(config.battles / 10, (eng) => {
-                const squadA = generator.createSquad(compA.composition, 10, 45, true);
-                const squadB = generator.createSquad(compB.composition, 90, 54, false);
-
-                squadA.forEach(c => eng.addCreep(c));
-                squadB.forEach(c => eng.addCreep(c));
-            });
-
-            // Record results in ELO system
-            const wins = results.wins;
-            const losses = results.losses;
-            const draws = results.draws;
-
-            // Update ELO based on aggregate results
-            if (wins > losses) {
-                elo.recordBattle(compA.id, compB.id, 'player', results.battles[0]);
-            } else if (losses > wins) {
-                elo.recordBattle(compA.id, compB.id, 'enemy', results.battles[0]);
-            } else {
-                elo.recordBattle(compA.id, compB.id, 'draw', results.battles[0]);
-            }
-
-            battleCount++;
-            if (battleCount % 10 === 0) {
-                process.stdout.write(`\rCompleted ${battleCount} matchups...`);
-            }
-        }
-    }
-
-    console.log(`\n\n=== ELO LEADERBOARD ===\n`);
-    printLeaderboard(elo);
-}
-
-/**
- * Run predefined scenario
- */
-function runPredefinedScenario() {
-    if (!config.scenario) {
-        console.error('Error: --scenario name required for predefined mode');
-        process.exit(1);
-    }
-
-    console.log(`=== PREDEFINED SCENARIO: ${config.scenario} ===\n`);
-
-    const generator = new ScenarioGenerator();
-    const composition = generator.getPredefinedComposition(config.scenario);
-
-    if (!composition) {
-        console.error(`Error: Unknown scenario "${config.scenario}"`);
-        console.log('\nAvailable scenarios: ranged_kite, heavy_melee, hybrid_squad, current_strategy');
-        process.exit(1);
-    }
-
-    // Test against all other predefined scenarios
-    const scenarios = ['ranged_kite', 'heavy_melee', 'hybrid_squad', 'current_strategy'];
-
-    for (const enemy of scenarios) {
-        if (enemy === config.scenario) continue;
-
-        console.log(`\n--- vs ${enemy} ---`);
-
-        const playerComp = composition;
-        const enemyComp = generator.getPredefinedComposition(enemy);
-
-        const engine = new CombatEngine({
-            verbose: config.verbose,
-            recordBattle: config.record !== null,
-            entropy: getEngineEntropy(config.entropy)
-        });
-        const results = engine.runMultipleBattles(config.battles, (eng) => {
-            const playerSquad = generator.createSquad(playerComp, 10, 45, true);
-            const enemySquad = generator.createSquad(enemyComp, 90, 54, false);
-
-            playerSquad.forEach(c => eng.addCreep(c));
-            enemySquad.forEach(c => eng.addCreep(c));
-        });
-
-        printBattleResults(results);
-
-        // Save recording after first matchup if requested
-        if (config.record) {
-            saveRecording(engine);
-            config.record = null; // Only record once
-        }
-    }
-}
-
-/**
- * Print battle results
- */
-function printBattleResults(results) {
-    console.log(`Results over ${results.iterations} battles:`);
-    console.log(`  Wins: ${results.wins} (${(results.winRate * 100).toFixed(1)}%)`);
-    console.log(`  Losses: ${results.losses} (${((results.losses / results.iterations) * 100).toFixed(1)}%)`);
-    console.log(`  Draws: ${results.draws} (${((results.draws / results.iterations) * 100).toFixed(1)}%)`);
-    console.log(`  Avg Duration: ${results.avgTicks.toFixed(1)} ticks`);
-}
-
-/**
- * Print ELO leaderboard
- */
-function printLeaderboard(elo) {
-    const leaderboard = elo.getLeaderboard(15);
-
-    console.log('Rank | Composition        | Rating | W-L-D      | Win%  | Avg Dmg | Avg Heal');
-    console.log('-----|-------------------|--------|------------|-------|---------|----------');
+function printLeaderboard(leaderboard) {
+    console.log('\n=== ELO LEADERBOARD ===\n');
+    console.log('Rank | Composition        | Rating | W-L-D      | Win%  | Avg Dmg | Avg Heal | Avg Ticks');
+    console.log('-----|-------------------|--------|------------|-------|---------|----------|-----------');
 
     leaderboard.forEach((entry, index) => {
         const rank = (index + 1).toString().padStart(4);
@@ -342,44 +112,61 @@ function printLeaderboard(elo) {
         const winRate = `${entry.winRate}%`.padStart(6);
         const avgDmg = entry.avgDamage.toString().padStart(8);
         const avgHeal = entry.avgHealing.toString().padStart(9);
+        const avgTicks = entry.avgTicks.toString().padStart(9);
 
-        console.log(`${rank} | ${name} | ${rating} | ${record} | ${winRate} | ${avgDmg} | ${avgHeal}`);
+        console.log(`${rank} | ${name} | ${rating} | ${record} | ${winRate} | ${avgDmg} | ${avgHeal} | ${avgTicks}`);
     });
 }
 
-/**
- * Calculate body cost
- */
-function calculateCost(body) {
-    return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
-}
+function saveRecording(recording, filename) {
+    if (!recording) {
+        console.warn('\nWarning: Recording requested but no battle data was captured.');
+        return;
+    }
 
-/**
- * Save battle recording to file
- */
-function saveRecording(engine) {
-    const recording = engine.exportRecording();
-    const filename = config.record || 'battle-recording.json';
     fs.writeFileSync(filename, JSON.stringify(recording, null, 2));
     console.log(`\nRecording saved to ${filename}`);
 }
 
-// Main execution
-switch (config.mode) {
-    case 'quick':
-        runQuickTest();
-        break;
-    case 'random':
-        runRandomTest();
-        break;
-    case 'elo':
-        runELOTournament();
-        break;
-    case 'predefined':
-        runPredefinedScenario();
-        break;
-    default:
-        console.error(`Unknown mode: ${config.mode}`);
-        printHelp();
-        process.exit(1);
+try {
+    const result = runSimulation({
+        mode: config.mode,
+        battles: config.battles,
+        compositions: config.compositions,
+        scenario: config.scenario,
+        verbose: config.verbose,
+        entropy: config.entropy,
+        record: Boolean(config.record),
+        heatmap: false
+    });
+
+    switch (result.mode) {
+        case 'elo':
+            console.log('=== ELO RATING TOURNAMENT ===\n');
+            console.log(`Generated ${config.compositions} compositions.`);
+            console.log(`Completed ${result.matchups} matchups.\n`);
+            printLeaderboard(result.leaderboard);
+            break;
+        case 'predefined':
+            console.log(`=== PREDEFINED SCENARIO: ${result.scenario} ===`);
+            result.runs.forEach(printRunSummary);
+            break;
+        case 'random':
+            console.log('=== RANDOM COMPOSITION TEST ===');
+            console.log(`Running ${config.battles} battles with random compositions...`);
+            result.runs.forEach(printRunSummary);
+            break;
+        case 'quick':
+        default:
+            console.log('=== QUICK TEST MODE ===');
+            result.runs.forEach(printRunSummary);
+            break;
+    }
+
+    if (config.record) {
+        saveRecording(result.recording, config.record);
+    }
+} catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
 }

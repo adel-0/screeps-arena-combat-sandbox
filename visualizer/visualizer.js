@@ -31,7 +31,51 @@ class BattleVisualizer {
         // Action effects for visualization
         this.effects = [];
 
+        // Heatmap overlay state
+        this.heatmapOverlay = null;
+        this.heatmapLabel = '';
+        this.heatmapStatusElement = null;
+
         this.setupEventListeners();
+    }
+
+    attachHeatmapStatusElement(element) {
+        this.heatmapStatusElement = element || null;
+        this.updateHeatmapStatus();
+    }
+
+    updateHeatmapStatus() {
+        if (!this.heatmapStatusElement) {
+            return;
+        }
+
+        if (this.heatmapOverlay) {
+            this.heatmapStatusElement.hidden = false;
+            const label = this.heatmapLabel ? `Heatmap overlay: ${this.heatmapLabel}` : 'Heatmap overlay active.';
+            this.heatmapStatusElement.textContent = label;
+        } else {
+            this.heatmapStatusElement.hidden = true;
+            this.heatmapStatusElement.textContent = 'Heatmap overlay off.';
+        }
+    }
+
+    setHeatmapOverlay(overlay, label = '') {
+        this.heatmapOverlay = overlay || null;
+        this.heatmapLabel = overlay ? (label || 'Heatmap') : '';
+        this.updateHeatmapStatus();
+
+        if (!this.battleData && !this.heatmapOverlay) {
+            this.clearCanvas();
+            this.updateOverlayUI();
+            return;
+        }
+
+        this.render();
+    }
+
+    clearCanvas() {
+        this.ctx.fillStyle = '#2a2a2e';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     setupEventListeners() {
@@ -138,15 +182,12 @@ class BattleVisualizer {
 
             console.log('Loaded battle:', this.battleData);
 
-            // Update grid size from battle data
             if (this.battleData.metadata && this.battleData.metadata.gridSize) {
                 this.gridSize = this.battleData.metadata.gridSize;
             } else if (this.battleData.terrain && this.battleData.terrain.length > 0) {
-                // Infer grid size from terrain dimensions
                 this.gridSize = this.battleData.terrain.length;
             }
 
-            // Recalculate cell size to fit canvas (800x800)
             this.cellSize = Math.floor(this.canvas.width / this.gridSize);
 
             console.log(`Grid size: ${this.gridSize}x${this.gridSize}, Cell size: ${this.cellSize}px`);
@@ -160,6 +201,29 @@ class BattleVisualizer {
         }
     }
 
+    loadBattleData(data) {
+        if (!data) {
+            return;
+        }
+
+        try {
+            this.battleData = data;
+
+            if (this.battleData.metadata && this.battleData.metadata.gridSize) {
+                this.gridSize = this.battleData.metadata.gridSize;
+            } else if (this.battleData.terrain && this.battleData.terrain.length > 0) {
+                this.gridSize = this.battleData.terrain.length;
+            }
+
+            this.cellSize = Math.max(1, Math.floor(this.canvas.width / this.gridSize));
+            this.currentTick = 0;
+            this.enableControls();
+            this.render();
+            console.log('Loaded battle data from simulation result');
+        } catch (error) {
+            console.error('Failed to load battle data:', error);
+        }
+    }
     enableControls() {
         document.getElementById('playBtn').disabled = false;
         document.getElementById('pauseBtn').disabled = false;
@@ -217,36 +281,122 @@ class BattleVisualizer {
     }
 
     render() {
-        if (!this.battleData) return;
+        const hasBattle = Boolean(this.battleData && Array.isArray(this.battleData.frames));
+        const hasHeatmap = Boolean(this.heatmapOverlay);
 
-        const tickData = this.battleData.frames[this.currentTick];
-        if (!tickData) return;
+        if (!hasBattle && !hasHeatmap) {
+            this.clearCanvas();
+            this.updateOverlayUI();
+            return;
+        }
 
-        // Clear canvas
-        this.ctx.fillStyle = '#2a2a2e';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        const tickData = hasBattle ? this.battleData.frames[this.currentTick] : null;
+        if (hasBattle && !tickData) {
+            return;
+        }
 
-        // Save context state
+        this.clearCanvas();
+
         this.ctx.save();
-
-        // Apply zoom and pan transformations
         this.ctx.translate(this.panX, this.panY);
         this.ctx.scale(this.zoom, this.zoom);
 
-        // Draw terrain
-        this.drawTerrain();
+        const overlayWidth = this.heatmapOverlay?.width || this.gridSize;
+        const overlayHeight = this.heatmapOverlay?.height || this.gridSize;
+        const activeWidth = hasBattle ? this.gridSize : overlayWidth;
+        const activeHeight = hasBattle ? this.gridSize : overlayHeight;
+        const effectiveWidth = Math.max(1, activeWidth);
+        const effectiveHeight = Math.max(1, activeHeight);
+        const baseCellSize = hasBattle
+            ? this.cellSize
+            : Math.max(1, Math.floor(this.canvas.width / effectiveWidth));
 
-        // Draw creeps
-        this.drawCreeps(tickData.creeps);
+        if (hasBattle) {
+            this.drawTerrain();
+        } else {
+            this.drawBaseGrid(effectiveWidth, effectiveHeight, baseCellSize);
+        }
 
-        // Draw action effects
-        this.drawActionEffects(tickData.actions);
+        if (hasHeatmap) {
+            this.drawHeatmapOverlay(effectiveWidth, effectiveHeight, baseCellSize);
+        }
 
-        // Restore context state
+        if (hasBattle && tickData) {
+            this.drawCreeps(tickData.creeps);
+            this.drawActionEffects(tickData.actions);
+        }
+
         this.ctx.restore();
 
-        // Update UI
-        this.updateUI(tickData);
+        if (hasBattle && tickData) {
+            this.updateUI(tickData);
+        } else {
+            this.updateOverlayUI();
+        }
+    }
+
+    drawBaseGrid(width, height, cellSize) {
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                this.ctx.fillStyle = '#33333a';
+                this.ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+
+                this.ctx.strokeStyle = '#2a2a2e';
+                this.ctx.lineWidth = 0.5;
+                this.ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+            }
+        }
+    }
+
+    drawHeatmapOverlay(activeWidth, activeHeight, baseCellSize) {
+        if (!this.heatmapOverlay) {
+            return;
+        }
+
+        const overlayWidth = Math.max(1, this.heatmapOverlay.width || activeWidth);
+        const overlayHeight = Math.max(1, this.heatmapOverlay.height || activeHeight);
+        const totalWidth = baseCellSize * activeWidth;
+        const totalHeight = baseCellSize * activeHeight;
+        const cellWidth = totalWidth / overlayWidth;
+        const cellHeight = totalHeight / overlayHeight;
+
+        const playerMatrix = this.heatmapOverlay.player?.matrix || [];
+        const enemyMatrix = this.heatmapOverlay.enemy?.matrix || [];
+        const playerMax = this.heatmapOverlay.player?.max || 0;
+        const enemyMax = this.heatmapOverlay.enemy?.max || 0;
+
+        const playerColor = [103, 194, 161];
+        const enemyColor = [226, 124, 121];
+        const maxAlpha = 0.65;
+
+        for (let y = 0; y < overlayHeight; y++) {
+            for (let x = 0; x < overlayWidth; x++) {
+                const playerValue = playerMatrix[y]?.[x] || 0;
+                const enemyValue = enemyMatrix[y]?.[x] || 0;
+
+                const playerIntensity = playerMax > 0 ? playerValue / playerMax : 0;
+                const enemyIntensity = enemyMax > 0 ? enemyValue / enemyMax : 0;
+
+                if (playerIntensity <= 0 && enemyIntensity <= 0) {
+                    continue;
+                }
+
+                const rectX = x * cellWidth;
+                const rectY = y * cellHeight;
+
+                if (playerIntensity > 0) {
+                    const alpha = Math.min(1, playerIntensity) * maxAlpha;
+                    this.ctx.fillStyle = `rgba(${playerColor[0]}, ${playerColor[1]}, ${playerColor[2]}, ${alpha})`;
+                    this.ctx.fillRect(rectX, rectY, cellWidth, cellHeight);
+                }
+
+                if (enemyIntensity > 0) {
+                    const alpha = Math.min(1, enemyIntensity) * maxAlpha;
+                    this.ctx.fillStyle = `rgba(${enemyColor[0]}, ${enemyColor[1]}, ${enemyColor[2]}, ${alpha})`;
+                    this.ctx.fillRect(rectX, rectY, cellWidth, cellHeight);
+                }
+            }
+        }
     }
 
     drawTerrain() {
@@ -409,10 +559,278 @@ class BattleVisualizer {
         document.getElementById('enemyDamage').textContent = Math.round(enemyDamage);
         document.getElementById('enemyHealing').textContent = Math.round(enemyHealing);
     }
+
+    updateOverlayUI() {
+        const progressBar = document.getElementById('timelineProgress');
+        if (progressBar) {
+            progressBar.style.width = '0%';
+        }
+
+        const timelineText = document.getElementById('timelineText');
+        if (timelineText) {
+            if (this.heatmapOverlay) {
+                const label = this.heatmapLabel ? `Heatmap overlay: ${this.heatmapLabel}` : 'Heatmap overlay active';
+                timelineText.textContent = label;
+            } else {
+                timelineText.textContent = 'No playback loaded';
+            }
+        }
+
+        const statIds = ['playerAlive', 'playerDamage', 'playerHealing', 'enemyAlive', 'enemyDamage', 'enemyHealing'];
+        statIds.forEach((id) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = '-';
+            }
+        });
+    }
+}
+
+function setupSimulationUI(visualizer) {
+    const form = document.getElementById('simulationForm');
+    if (!form) {
+        return;
+    }
+
+    const modeSelect = document.getElementById('simMode');
+    const battlesInput = document.getElementById('simBattles');
+    const compositionsInput = document.getElementById('simCompositions');
+    const scenarioSelect = document.getElementById('simScenario');
+    const entropyCheckbox = document.getElementById('simEntropy');
+    const recordCheckbox = document.getElementById('simRecord');
+    const heatmapCheckbox = document.getElementById('simHeatmap');
+    const statusText = document.getElementById('simStatus');
+    const resultsSummary = document.getElementById('resultsSummary');
+    const heatmapStatus = document.getElementById('heatmapStatus');
+    const scenarioRow = document.getElementById('scenarioRow');
+    const compositionsRow = document.getElementById('compositionsRow');
+
+    visualizer.attachHeatmapStatusElement(heatmapStatus);
+
+    const baseStatusColor = statusText ? window.getComputedStyle(statusText).color : '#8bb8e8';
+
+    const setStatus = (message, isError = false) => {
+        if (!statusText) {
+            return;
+        }
+        statusText.textContent = message || '';
+        statusText.style.color = isError ? '#e27c79' : baseStatusColor;
+    };
+
+    const updateVisibility = () => {
+        const mode = modeSelect.value;
+
+        if (scenarioRow) {
+            scenarioRow.style.display = mode === 'predefined' ? 'flex' : 'none';
+        }
+
+        if (compositionsRow) {
+            compositionsRow.style.display = mode === 'elo' ? 'flex' : 'none';
+        }
+
+        if (heatmapCheckbox) {
+            if (mode === 'elo') {
+                heatmapCheckbox.checked = false;
+                heatmapCheckbox.disabled = true;
+            } else {
+                heatmapCheckbox.disabled = false;
+            }
+        }
+    };
+
+    if (modeSelect) {
+        modeSelect.addEventListener('change', updateVisibility);
+    }
+    updateVisibility();
+
+    const highlightSelection = (selectedIndex) => {
+        if (!resultsSummary) {
+            return;
+        }
+        const nodes = resultsSummary.querySelectorAll('.results-run');
+        nodes.forEach((node, index) => {
+            const isSelected = index === selectedIndex;
+            node.classList.toggle('selected', isSelected);
+        });
+    };
+
+    const renderResults = (result) => {
+        if (!resultsSummary) {
+            return;
+        }
+
+        const fragments = [];
+        let availableRuns = [];
+
+        if (result.mode === 'elo') {
+            const leaderboard = result.leaderboard || [];
+            if (leaderboard.length === 0) {
+                fragments.push('<span>No leaderboard data returned.</span>');
+            } else {
+                let table = '<div class="results-run"><h4>ELO Leaderboard</h4>';
+                table += '<table class="results-table"><thead><tr><th>Rank</th><th>Composition</th><th>Rating</th><th>W-L-D</th><th>Win%</th><th>Avg Dmg</th><th>Avg Heal</th><th>Avg Ticks</th></tr></thead><tbody>';
+                leaderboard.forEach((entry, index) => {
+                    table += `<tr><td>${index + 1}</td><td>${entry.id}</td><td>${entry.rating}</td><td>${entry.wins}-${entry.losses}-${entry.draws}</td><td>${entry.winRate}</td><td>${entry.avgDamage}</td><td>${entry.avgHealing}</td><td>${entry.avgTicks}</td></tr>`;
+                });
+                table += '</tbody></table>';
+                if (typeof result.matchups === 'number') {
+                    table += `<p>Matchups simulated: ${result.matchups}</p>`;
+                }
+                table += '</div>';
+                fragments.push(table);
+            }
+        } else if (Array.isArray(result.runs) && result.runs.length > 0) {
+            result.runs.forEach((run, index) => {
+                const summary = run.summary;
+                const iterations = summary.iterations || 0;
+                const winPercent = (summary.winRate * 100).toFixed(1);
+                const lossPercent = iterations > 0 ? ((summary.losses / iterations) * 100).toFixed(1) : '0.0';
+                const drawPercent = iterations > 0 ? ((summary.draws / iterations) * 100).toFixed(1) : '0.0';
+
+                let block = `<div class="results-run" data-index="${index}">`;
+                block += `<h4>${run.label}</h4>`;
+                if (typeof run.playerCost === 'number' && typeof run.enemyCost === 'number') {
+                    block += `<p><strong>Energy:</strong> Player ${run.playerCost} • Enemy ${run.enemyCost}</p>`;
+                }
+                block += `<p><strong>Wins:</strong> ${summary.wins} (${winPercent}%) • Losses: ${summary.losses} (${lossPercent}%) • Draws: ${summary.draws} (${drawPercent}%)</p>`;
+                block += `<p><strong>Avg Ticks:</strong> ${summary.avgTicks.toFixed(1)}</p>`;
+                block += `<p><strong>Player</strong> dmg ${summary.player.avgDamage.toFixed(1)} | heal ${summary.player.avgHealing.toFixed(1)} | survivors ${summary.player.avgSurvivors.toFixed(1)}</p>`;
+                block += `<p><strong>Enemy</strong> dmg ${summary.enemy.avgDamage.toFixed(1)} | heal ${summary.enemy.avgHealing.toFixed(1)} | survivors ${summary.enemy.avgSurvivors.toFixed(1)}</p>`;
+                if (run.heatmap) {
+                    block += '<p class="results-note">Heatmap overlay available; click to activate.</p>';
+                }
+                block += '</div>';
+                fragments.push(block);
+            });
+            availableRuns = result.runs;
+        } else {
+            fragments.push('<span>No runs returned.</span>');
+        }
+
+        resultsSummary.innerHTML = fragments.join('');
+
+        if (availableRuns.length === 0) {
+            visualizer.setHeatmapOverlay(null);
+            highlightSelection(-1);
+            return;
+        }
+
+        const nodes = resultsSummary.querySelectorAll('.results-run');
+        let initialSelection = null;
+        let initialHeatmap = null;
+
+        availableRuns.forEach((run, index) => {
+            const node = nodes[index];
+            if (!node) {
+                return;
+            }
+
+            node.classList.add('interactive');
+            node.classList.toggle('has-heatmap', Boolean(run.heatmap));
+
+            if (!initialSelection) {
+                initialSelection = { run, index };
+            }
+
+            if (!initialHeatmap && run.heatmap) {
+                initialHeatmap = { run, index };
+            }
+
+            node.addEventListener('click', () => {
+                highlightSelection(index);
+
+                if (run.heatmap) {
+                    visualizer.setHeatmapOverlay(run.heatmap, run.label);
+                } else {
+                    visualizer.setHeatmapOverlay(null);
+                }
+
+                if (run.recording) {
+                    visualizer.loadBattleData(run.recording);
+                }
+            });
+        });
+
+        const chosen = initialHeatmap || initialSelection;
+
+        if (chosen) {
+            highlightSelection(chosen.index);
+
+            if (chosen.run.heatmap) {
+                visualizer.setHeatmapOverlay(chosen.run.heatmap, chosen.run.label);
+            } else {
+                visualizer.setHeatmapOverlay(null);
+            }
+
+            if (chosen.run.recording) {
+                visualizer.loadBattleData(chosen.run.recording);
+            }
+        }
+    };
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
+
+        setStatus('Running simulation...');
+
+        const payload = {
+            mode: modeSelect.value,
+            battles: battlesInput.value ? Number(battlesInput.value) : undefined,
+            compositions: compositionsInput.value ? Number(compositionsInput.value) : undefined,
+            scenario: modeSelect.value === 'predefined' ? scenarioSelect.value : undefined,
+            entropy: entropyCheckbox.checked,
+            record: recordCheckbox.checked,
+            heatmap: heatmapCheckbox.checked
+        };
+
+        if (payload.mode !== 'elo') {
+            delete payload.compositions;
+        }
+
+        if (payload.mode !== 'predefined') {
+            delete payload.scenario;
+        }
+
+        try {
+            const response = await fetch('/api/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const json = await response.json();
+
+            if (!response.ok || !json.ok) {
+                throw new Error(json.error || 'Simulation failed');
+            }
+
+            const result = json.result;
+            renderResults(result);
+
+            if (recordCheckbox.checked && result.recording) {
+                visualizer.loadBattleData(result.recording);
+            }
+
+            setStatus('Simulation complete.');
+        } catch (error) {
+            console.error('Simulation request failed:', error);
+            setStatus(`Error: ${error.message}`, true);
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        }
+    });
 }
 
 // Initialize visualizer when page loads
 window.addEventListener('DOMContentLoaded', () => {
     const visualizer = new BattleVisualizer('battleCanvas');
+    setupSimulationUI(visualizer);
     console.log('Battle Visualizer initialized');
 });
