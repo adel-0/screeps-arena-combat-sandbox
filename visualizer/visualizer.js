@@ -836,7 +836,8 @@ function renderRecordingsList(recordings, visualizer) {
             <p>${dateStr} • ${(recording.size / 1024).toFixed(1)} KB</p>
             <div class="button-group">
                 <button class="load-recording-btn" data-filename="${recording.filename}">Load</button>
-                <button class="view-heatmap-btn" data-filename="${recording.filename}">Heatmap</button>
+                <button class="view-heatmap-btn" data-filename="${recording.filename}">Per-Battle</button>
+                <button class="view-agg-heatmap-btn" data-filename="${recording.filename}">Aggregated</button>
                 <button class="delete-btn" data-filename="${recording.filename}">Delete</button>
             </div>
         `;
@@ -848,15 +849,23 @@ function renderRecordingsList(recordings, visualizer) {
     container.querySelectorAll('.load-recording-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const filename = e.target.dataset.filename;
-            await loadRecordingFromFile(filename, visualizer);
+            await loadRecordingFromFile(filename, visualizer, 0);
         });
     });
 
-    // Add event listeners for heatmap buttons
+    // Add event listeners for per-battle heatmap buttons
     container.querySelectorAll('.view-heatmap-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const filename = e.target.dataset.filename;
-            await loadHeatmapFromFile(filename, visualizer);
+            await loadHeatmapFromFile(filename, visualizer, 0, false);
+        });
+    });
+
+    // Add event listeners for aggregated heatmap buttons
+    container.querySelectorAll('.view-agg-heatmap-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const filename = e.target.dataset.filename;
+            await loadHeatmapFromFile(filename, visualizer, null, true);
         });
     });
 
@@ -869,28 +878,102 @@ function renderRecordingsList(recordings, visualizer) {
     });
 }
 
-async function loadRecordingFromFile(filename, visualizer) {
+let currentRecordingFile = null;
+let currentRecordingTotalBattles = 0;
+
+async function loadRecordingFromFile(filename, visualizer, battleIndex = 0) {
     try {
-        const response = await fetch(`/api/recordings/${encodeURIComponent(filename)}`);
+        const url = `/api/recordings/${encodeURIComponent(filename)}${battleIndex ? `?battle=${battleIndex}` : ''}`;
+        const response = await fetch(url);
         const json = await response.json();
 
         if (!response.ok || !json.ok) {
             throw new Error(json.error || 'Failed to load recording');
         }
 
+        // Store current recording info
+        currentRecordingFile = filename;
+        currentRecordingTotalBattles = json.totalBattles || 1;
+
         // Clear heatmap overlay when loading a recording
         visualizer.setHeatmapOverlay(null);
         visualizer.loadBattleData(json.recording);
-        console.log(`Loaded recording: ${filename}`);
+
+        // Show battle selector if there are multiple battles
+        if (currentRecordingTotalBattles > 1) {
+            showBattleSelector(visualizer, json.battleIndex || 0);
+        } else {
+            hideBattleSelector();
+        }
+
+        console.log(`Loaded recording: ${filename} (Battle ${(json.battleIndex || 0) + 1}/${currentRecordingTotalBattles})`);
     } catch (error) {
         console.error('Failed to load recording:', error);
         alert(`Failed to load recording: ${error.message}`);
     }
 }
 
-async function loadHeatmapFromFile(filename, visualizer) {
+function showBattleSelector(visualizer, currentIndex) {
+    let selector = document.getElementById('battleSelector');
+    if (!selector) {
+        // Create battle selector
+        const timeline = document.querySelector('.timeline');
+        selector = document.createElement('div');
+        selector.id = 'battleSelector';
+        selector.style.marginTop = '12px';
+        selector.innerHTML = `
+            <label style="font-size: 12px; color: #b8bbbf; display: block; margin-bottom: 6px;">
+                Select Battle:
+            </label>
+            <select id="battleSelect" style="width: 100%; background: #2a2a2e; border: 1px solid #4a4a52; border-radius: 4px; padding: 8px; color: #c5c8c6; font-size: 13px;">
+            </select>
+        `;
+        timeline.appendChild(selector);
+
+        // Add change listener
+        document.getElementById('battleSelect').addEventListener('change', (e) => {
+            const newIndex = parseInt(e.target.value, 10);
+            loadRecordingFromFile(currentRecordingFile, visualizer, newIndex);
+        });
+    }
+
+    // Update options
+    const select = document.getElementById('battleSelect');
+    select.innerHTML = '';
+    for (let i = 0; i < currentRecordingTotalBattles; i++) {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = `Battle ${i + 1}`;
+        option.selected = i === currentIndex;
+        select.appendChild(option);
+    }
+
+    selector.style.display = 'block';
+}
+
+function hideBattleSelector() {
+    const selector = document.getElementById('battleSelector');
+    if (selector) {
+        selector.style.display = 'none';
+    }
+}
+
+async function loadHeatmapFromFile(filename, visualizer, battleIndex = 0, aggregated = false) {
     try {
-        const response = await fetch(`/api/heatmap/${encodeURIComponent(filename)}`);
+        let url = `/api/heatmap/${encodeURIComponent(filename)}`;
+        const params = [];
+
+        if (aggregated) {
+            params.push('aggregated=true');
+        } else if (battleIndex !== null) {
+            params.push(`battle=${battleIndex}`);
+        }
+
+        if (params.length > 0) {
+            url += '?' + params.join('&');
+        }
+
+        const response = await fetch(url);
         const json = await response.json();
 
         if (!response.ok || !json.ok) {
@@ -900,8 +983,14 @@ async function loadHeatmapFromFile(filename, visualizer) {
         // Clear battle data and show heatmap only
         visualizer.battleData = null;
         visualizer.disableControls();
-        visualizer.setHeatmapOverlay(json.heatmap, `Heatmap: ${filename}`);
-        console.log(`Loaded heatmap for: ${filename}`);
+        hideBattleSelector();
+
+        const label = aggregated
+            ? `Aggregated Heatmap: ${filename}`
+            : `Battle ${battleIndex + 1} Heatmap: ${filename}`;
+
+        visualizer.setHeatmapOverlay(json.heatmap, label);
+        console.log(`Loaded heatmap for: ${filename} (${aggregated ? 'aggregated' : `battle ${battleIndex + 1}`})`);
     } catch (error) {
         console.error('Failed to load heatmap:', error);
         alert(`Failed to load heatmap: ${error.message}`);

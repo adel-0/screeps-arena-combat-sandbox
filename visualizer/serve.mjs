@@ -140,6 +140,12 @@ function handleRecordingsListRequest(req, res) {
 }
 
 function generateHeatmapFromRecording(recording) {
+    // Handle new multi-battle format
+    if (recording && recording.battles && Array.isArray(recording.battles)) {
+        return generateHeatmapFromBattles(recording.battles, recording.metadata);
+    }
+
+    // Handle legacy single-battle format
     if (!recording || !recording.frames) {
         return null;
     }
@@ -180,7 +186,52 @@ function generateHeatmapFromRecording(recording) {
     };
 }
 
-function handleRecordingFileRequest(req, res, filename) {
+function generateHeatmapFromBattles(battles, metadata) {
+    if (!battles || battles.length === 0) {
+        return null;
+    }
+
+    const width = metadata?.gridSize || battles[0]?.metadata?.gridSize || 100;
+    const height = metadata?.gridSize || battles[0]?.metadata?.gridSize || 100;
+
+    const createMatrix = () => Array.from({ length: height }, () => Array(width).fill(0));
+    const playerMatrix = createMatrix();
+    const enemyMatrix = createMatrix();
+
+    let playerMax = 0;
+    let enemyMax = 0;
+
+    // Iterate through all battles and all frames
+    for (const battle of battles) {
+        if (!battle.frames) continue;
+
+        for (const frame of battle.frames) {
+            for (const creep of frame.creeps || []) {
+                const x = Math.max(0, Math.min(width - 1, Math.floor(creep.x ?? 0)));
+                const y = Math.max(0, Math.min(height - 1, Math.floor(creep.y ?? 0)));
+
+                if (creep.my) {
+                    const value = playerMatrix[y][x] + 1;
+                    playerMatrix[y][x] = value;
+                    if (value > playerMax) playerMax = value;
+                } else {
+                    const value = enemyMatrix[y][x] + 1;
+                    enemyMatrix[y][x] = value;
+                    if (value > enemyMax) enemyMax = value;
+                }
+            }
+        }
+    }
+
+    return {
+        width,
+        height,
+        player: { matrix: playerMatrix, max: playerMax },
+        enemy: { matrix: enemyMatrix, max: enemyMax }
+    };
+}
+
+function handleRecordingFileRequest(req, res, filename, battleIndex = 0) {
     try {
         // Security: prevent directory traversal
         const safeName = path.basename(filename);
@@ -198,17 +249,33 @@ function handleRecordingFileRequest(req, res, filename) {
             return;
         }
 
-        // Read and send file
+        // Read recording
         const data = fs.readFileSync(filepath, 'utf8');
         const recording = JSON.parse(data);
-        sendJson(res, 200, { ok: true, recording });
+
+        // Handle new multi-battle format - convert to single battle for visualizer
+        if (recording.battles && Array.isArray(recording.battles) && recording.battles.length > 0) {
+            // Validate battle index
+            const validIndex = Math.max(0, Math.min(battleIndex, recording.battles.length - 1));
+            const selectedBattle = recording.battles[validIndex];
+
+            sendJson(res, 200, {
+                ok: true,
+                recording: selectedBattle,
+                totalBattles: recording.totalBattles,
+                battleIndex: validIndex
+            });
+        } else {
+            // Legacy format - return as is
+            sendJson(res, 200, { ok: true, recording });
+        }
     } catch (error) {
         console.error('Error loading recording:', error);
         sendJson(res, 500, { ok: false, error: error.message });
     }
 }
 
-function handleHeatmapRequest(req, res, filename) {
+function handleHeatmapRequest(req, res, filename, battleIndex = null, aggregated = false) {
     try {
         // Security: prevent directory traversal
         const safeName = path.basename(filename);
@@ -226,10 +293,34 @@ function handleHeatmapRequest(req, res, filename) {
             return;
         }
 
-        // Read recording and generate heatmap
+        // Read recording
         const data = fs.readFileSync(filepath, 'utf8');
         const recording = JSON.parse(data);
-        const heatmap = generateHeatmapFromRecording(recording);
+
+        let heatmap;
+
+        // If recording has embedded heatmap data, use it
+        if (recording.heatmap) {
+            if (aggregated && recording.heatmap.aggregated) {
+                heatmap = recording.heatmap.aggregated;
+            } else if (battleIndex !== null && recording.heatmap.perBattle && recording.heatmap.perBattle[battleIndex]) {
+                heatmap = recording.heatmap.perBattle[battleIndex];
+            } else if (!aggregated && battleIndex === null) {
+                // Default to aggregated if no specific battle requested
+                heatmap = recording.heatmap.aggregated || recording.heatmap;
+            } else {
+                heatmap = recording.heatmap.aggregated || recording.heatmap;
+            }
+        } else {
+            // Generate heatmap from recording frames
+            if (battleIndex !== null && recording.battles && recording.battles[battleIndex]) {
+                // Generate heatmap for specific battle
+                heatmap = generateHeatmapFromRecording({ frames: recording.battles[battleIndex].frames, metadata: recording.metadata });
+            } else {
+                // Generate aggregated heatmap
+                heatmap = generateHeatmapFromRecording(recording);
+            }
+        }
 
         if (!heatmap) {
             sendJson(res, 400, { ok: false, error: 'Failed to generate heatmap' });
@@ -385,16 +476,26 @@ const server = http.createServer((req, res) => {
             sendJson(res, 405, { ok: false, error: 'Method not allowed' });
             return;
         }
-        const filename = decodeURIComponent(req.url.substring('/api/heatmap/'.length));
-        handleHeatmapRequest(req, res, filename);
+        const urlParts = req.url.substring('/api/heatmap/'.length).split('?');
+        const filename = decodeURIComponent(urlParts[0]);
+        const queryString = urlParts[1] || '';
+        const params = new URLSearchParams(queryString);
+        const battleIndex = params.has('battle') ? parseInt(params.get('battle'), 10) : null;
+        const aggregated = params.get('aggregated') === 'true';
+
+        handleHeatmapRequest(req, res, filename, battleIndex, aggregated);
         return;
     }
 
     if (req.url.startsWith('/api/recordings/')) {
-        const filename = decodeURIComponent(req.url.substring('/api/recordings/'.length));
+        const urlParts = req.url.substring('/api/recordings/'.length).split('?');
+        const filename = decodeURIComponent(urlParts[0]);
+        const queryString = urlParts[1] || '';
+        const params = new URLSearchParams(queryString);
 
         if (req.method === 'GET') {
-            handleRecordingFileRequest(req, res, filename);
+            const battleIndex = params.has('battle') ? parseInt(params.get('battle'), 10) : 0;
+            handleRecordingFileRequest(req, res, filename, battleIndex);
             return;
         }
 
