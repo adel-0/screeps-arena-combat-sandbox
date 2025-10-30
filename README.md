@@ -1,4 +1,4 @@
-# Screeps Arena Combat Simulator
+# Screeps Combat Simulator
 
 Offline combat simulator for Screeps Arena. Test squad compositions, run tournaments, and figure out what actually works before you deploy.
 

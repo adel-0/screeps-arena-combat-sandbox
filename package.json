@@ -1,5 +1,5 @@
 {
-  "name": "screeps-arena-simulator",
+  "name": "screeps-combat-simulator",
   "version": "1.0.0",
   "description": "Combat simulator for Screeps Arena with ELO ratings",
   "type": "module",

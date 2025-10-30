@@ -52,7 +52,7 @@ for (let i = 0; i < args.length; i++) {
 
 function printHelp() {
     console.log(`
-Screeps Arena Combat Simulator
+Screeps Combat Simulator
 
 Usage: node runner.mjs [options]
 

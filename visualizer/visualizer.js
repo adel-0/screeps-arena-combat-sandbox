@@ -1,5 +1,5 @@
 /**
- * Screeps Arena Combat Visualizer
+ * Screeps Combat Simulator Visualizer
  * Renders and replays battle recordings
  */
 
