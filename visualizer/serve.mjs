@@ -74,7 +74,7 @@ server.listen(PORT, () => {
     console.log('   4. Use controls to play/pause/scrub the battle');
     console.log('');
     console.log('💡 To create a recording:');
-    console.log('   node record-battle.mjs');
+    console.log('   node ../runner.mjs --mode quick --record sample-battle.json');
     console.log('');
     console.log('Press Ctrl+C to stop the server');
 });
