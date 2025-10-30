@@ -144,7 +144,7 @@ try {
         verbose: config.verbose,
         entropy: config.entropy,
         record: Boolean(config.record),
-        heatmap: false
+        heatmap: Boolean(config.record) // Enable heatmap when recording
     });
 
     switch (result.mode) {

@@ -103,44 +103,102 @@ function summarizeBattles(results) {
 function buildHeatmap(battles, width, height) {
     const createMatrix = () => Array.from({ length: height }, () => Array(width).fill(0));
 
-    const playerMatrix = createMatrix();
-    const enemyMatrix = createMatrix();
+    // Aggregated heatmap across all battles
+    const aggregatedPlayerMatrix = createMatrix();
+    const aggregatedEnemyMatrix = createMatrix();
 
-    let playerMax = 0;
-    let enemyMax = 0;
+    let aggregatedPlayerMax = 0;
+    let aggregatedEnemyMax = 0;
+
+    // Per-battle heatmaps
+    const perBattleHeatmaps = [];
 
     for (const battle of battles) {
+        // Create matrices for this specific battle
+        const battlePlayerMatrix = createMatrix();
+        const battleEnemyMatrix = createMatrix();
+        let battlePlayerMax = 0;
+        let battleEnemyMax = 0;
+
+        // Process player creeps
         for (const creep of battle.player?.creeps || []) {
             const x = Math.max(0, Math.min(width - 1, creep.x ?? 0));
             const y = Math.max(0, Math.min(height - 1, creep.y ?? 0));
-            const value = playerMatrix[y][x] + 1;
-            playerMatrix[y][x] = value;
-            if (value > playerMax) {
-                playerMax = value;
+
+            // Update aggregated heatmap
+            const aggValue = aggregatedPlayerMatrix[y][x] + 1;
+            aggregatedPlayerMatrix[y][x] = aggValue;
+            if (aggValue > aggregatedPlayerMax) {
+                aggregatedPlayerMax = aggValue;
+            }
+
+            // Update per-battle heatmap
+            const battleValue = battlePlayerMatrix[y][x] + 1;
+            battlePlayerMatrix[y][x] = battleValue;
+            if (battleValue > battlePlayerMax) {
+                battlePlayerMax = battleValue;
             }
         }
 
+        // Process enemy creeps
         for (const creep of battle.enemy?.creeps || []) {
             const x = Math.max(0, Math.min(width - 1, creep.x ?? 0));
             const y = Math.max(0, Math.min(height - 1, creep.y ?? 0));
-            const value = enemyMatrix[y][x] + 1;
-            enemyMatrix[y][x] = value;
-            if (value > enemyMax) {
-                enemyMax = value;
+
+            // Update aggregated heatmap
+            const aggValue = aggregatedEnemyMatrix[y][x] + 1;
+            aggregatedEnemyMatrix[y][x] = aggValue;
+            if (aggValue > aggregatedEnemyMax) {
+                aggregatedEnemyMax = aggValue;
+            }
+
+            // Update per-battle heatmap
+            const battleValue = battleEnemyMatrix[y][x] + 1;
+            battleEnemyMatrix[y][x] = battleValue;
+            if (battleValue > battleEnemyMax) {
+                battleEnemyMax = battleValue;
             }
         }
+
+        // Store this battle's heatmap
+        perBattleHeatmaps.push({
+            width,
+            height,
+            player: {
+                matrix: battlePlayerMatrix,
+                max: battlePlayerMax
+            },
+            enemy: {
+                matrix: battleEnemyMatrix,
+                max: battleEnemyMax
+            }
+        });
     }
 
     return {
         width,
         height,
+        // Aggregated data (summed across all battles)
+        aggregated: {
+            player: {
+                matrix: aggregatedPlayerMatrix,
+                max: aggregatedPlayerMax
+            },
+            enemy: {
+                matrix: aggregatedEnemyMatrix,
+                max: aggregatedEnemyMax
+            }
+        },
+        // Individual battle heatmaps
+        perBattle: perBattleHeatmaps,
+        // For backward compatibility, also expose aggregated at top level
         player: {
-            matrix: playerMatrix,
-            max: playerMax
+            matrix: aggregatedPlayerMatrix,
+            max: aggregatedPlayerMax
         },
         enemy: {
-            matrix: enemyMatrix,
-            max: enemyMax
+            matrix: aggregatedEnemyMatrix,
+            max: aggregatedEnemyMax
         }
     };
 }
@@ -166,8 +224,20 @@ function runMatchup({
     const engine = new CombatEngine(createEngineConfig(config, recordRequest.active));
 
     const results = engine.runMultipleBattles(iterations, (eng) => {
-        const playerSquad = generator.createSquad(playerComp, 10, 25, true);
-        const enemySquad = generator.createSquad(enemyComp, 40, 25, false);
+        // Randomize spawn positions for each battle
+        const mapSize = eng.baseTerrain?.width || 50;
+        const margin = 15; // Keep away from edges
+
+        // Random Y position for both teams (same Y to keep them aligned)
+        const spawnY = margin + Math.floor(Math.random() * (mapSize - 2 * margin));
+
+        // Random X positions ensuring minimum separation
+        const minSeparation = 20;
+        const playerX = margin + Math.floor(Math.random() * (mapSize - 2 * margin - minSeparation));
+        const enemyX = playerX + minSeparation + Math.floor(Math.random() * (mapSize - playerX - margin - minSeparation));
+
+        const playerSquad = generator.createSquad(playerComp, playerX, spawnY, true);
+        const enemySquad = generator.createSquad(enemyComp, enemyX, spawnY, false);
 
         playerSquad.forEach(c => eng.addCreep(c));
         enemySquad.forEach(c => eng.addCreep(c));
@@ -189,7 +259,11 @@ function runMatchup({
     }
 
     if (recordRequest.active && !recordRequest.captured) {
-        runInfo.recording = engine.exportRecording();
+        runInfo.recording = engine.exportAllRecordings();
+        // Include heatmap in the recording if available
+        if (runInfo.heatmap) {
+            runInfo.recording.heatmap = runInfo.heatmap;
+        }
         recordRequest.captured = true;
     }
 
@@ -250,8 +324,20 @@ function runRandomMode(config) {
         const playerComp = generator.generateSquad(3000);
         const enemyComp = generator.generateSquad(3000);
 
-        const playerSquad = generator.createSquad(playerComp, 10, 25, true);
-        const enemySquad = generator.createSquad(enemyComp, 40, 25, false);
+        // Randomize spawn positions for each battle
+        const mapSize = eng.baseTerrain?.width || 50;
+        const margin = 15; // Keep away from edges
+
+        // Random Y position for both teams (same Y to keep them aligned)
+        const spawnY = margin + Math.floor(Math.random() * (mapSize - 2 * margin));
+
+        // Random X positions ensuring minimum separation
+        const minSeparation = 20;
+        const playerX = margin + Math.floor(Math.random() * (mapSize - 2 * margin - minSeparation));
+        const enemyX = playerX + minSeparation + Math.floor(Math.random() * (mapSize - playerX - margin - minSeparation));
+
+        const playerSquad = generator.createSquad(playerComp, playerX, spawnY, true);
+        const enemySquad = generator.createSquad(enemyComp, enemyX, spawnY, false);
 
         playerSquad.forEach(c => eng.addCreep(c));
         enemySquad.forEach(c => eng.addCreep(c));
@@ -271,7 +357,11 @@ function runRandomMode(config) {
     }
 
     if (recordRequest.active) {
-        runInfo.recording = engine.exportRecording();
+        runInfo.recording = engine.exportAllRecordings();
+        // Include heatmap in the recording if available
+        if (runInfo.heatmap) {
+            runInfo.recording.heatmap = runInfo.heatmap;
+        }
     }
 
     const result = {
@@ -362,8 +452,20 @@ function runEloMode(config) {
 
             const engine = new CombatEngine(createEngineConfig(config, false));
             const results = engine.runMultipleBattles(totalBattlesPerMatchup, (eng) => {
-                const squadA = generator.createSquad(compA.composition, 10, 25, true);
-                const squadB = generator.createSquad(compB.composition, 40, 25, false);
+                // Randomize spawn positions for each battle
+                const mapSize = eng.baseTerrain?.width || 50;
+                const margin = 15; // Keep away from edges
+
+                // Random Y position for both teams (same Y to keep them aligned)
+                const spawnY = margin + Math.floor(Math.random() * (mapSize - 2 * margin));
+
+                // Random X positions ensuring minimum separation
+                const minSeparation = 20;
+                const playerX = margin + Math.floor(Math.random() * (mapSize - 2 * margin - minSeparation));
+                const enemyX = playerX + minSeparation + Math.floor(Math.random() * (mapSize - playerX - margin - minSeparation));
+
+                const squadA = generator.createSquad(compA.composition, playerX, spawnY, true);
+                const squadB = generator.createSquad(compB.composition, enemyX, spawnY, false);
 
                 squadA.forEach(c => eng.addCreep(c));
                 squadB.forEach(c => eng.addCreep(c));

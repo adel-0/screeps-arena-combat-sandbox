@@ -283,6 +283,7 @@ export class CombatEngine {
         this.verbose = config.verbose || false;
         this.recordBattle = config.recordBattle || false;
         this.entropy = normalizeEntropyConfig(config.entropy);
+        this.allRecordings = []; // Store all battle recordings
 
         this.reset();
     }
@@ -617,6 +618,11 @@ export class CombatEngine {
             // Battle continues
         }
 
+        // Save recording for this battle if recording is enabled
+        if (this.recordBattle && this.recording.frames.length > 0) {
+            this.allRecordings.push(this.exportRecording());
+        }
+
         return this.getBattleResults();
     }
 
@@ -697,6 +703,21 @@ export class CombatEngine {
             totalTicks: this.tick,
             terrain: this.recording.terrain,
             frames: this.recording.frames,
+            metadata: {
+                maxTicks: this.maxTicks,
+                gridSize: this.terrain ? this.terrain.width : 100
+            }
+        };
+    }
+
+    /**
+     * Export all battle recordings
+     * @returns {Object} All recordings with metadata
+     */
+    exportAllRecordings() {
+        return {
+            battles: this.allRecordings,
+            totalBattles: this.allRecordings.length,
             metadata: {
                 maxTicks: this.maxTicks,
                 gridSize: this.terrain ? this.terrain.width : 100
